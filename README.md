@@ -247,10 +247,10 @@ The `.gitignore` protects many personal files, but untracked generated files sho
 
 ## Repository Origin And Attribution
 
-This project was originally forked from `santifer/career-ops`. I customized it into a personalized Career Ops system for my own technical GTM and AI/SaaS job search workflow. Original project structure and license are preserved where applicable.
+This project was originally forked from [santifer/career-ops](https://github.com/santifer/career-ops). I customized it into a personalized Career Ops system for my own technical GTM and AI/SaaS job search workflow. Original project structure and license are preserved where applicable.
 
 The original project provided the open-source foundation for the broader Career Ops workflow. This fork focuses on my own scanner configuration, role targeting, provider integrations, filtering safeguards, and pipeline process.
 
 ## License
 
-This repository preserves the original license where applicable. See `LICENSE` for details.
+This repository preserves the original license where applicable. See [LICENSE](LICENSE) for details.
