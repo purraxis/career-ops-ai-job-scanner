@@ -78,18 +78,21 @@ Key rules:
 ## Architecture Overview
 
 ```mermaid
-flowchart TD
-    A["Config: portals.yml, profile, safeguards"] --> B["Job Sources"]
-    B --> C["Provider Fetch"]
-    C --> D["Normalize Jobs"]
-    D --> E["Freshness Filter"]
-    E --> F["Role and Seniority Filter"]
-    F --> G["Sponsorship Filter"]
-    G --> H["Compensation and Location Filter"]
-    H --> I["Deduplication"]
-    I --> J["Live Verification"]
-    J --> K["data/pipeline.md"]
-    J --> L["Rejected or Review Logs"]
+flowchart LR
+  A["Config: portals.yml + safeguards"] --> B["Job Sources: ATS + Adzuna + Jooble + boards"]
+  B --> C["Fetch"]
+  C --> D["Normalize Job Schema"]
+  D --> E["Freshness Filter: postedAt <= 7 days"]
+  E --> F["Role/Seniority Filter"]
+  F --> G["Sponsorship/Visa Filter"]
+  G --> H["Compensation/Location Filter"]
+  H --> I["Live Verification"]
+  I --> J["Pipeline Output: data/pipeline.md"]
+  E --> K["Rejected / Needs Review Logs"]
+  F --> K
+  G --> K
+  H --> K
+  I --> K
 ```
 
 Important scanner files:
