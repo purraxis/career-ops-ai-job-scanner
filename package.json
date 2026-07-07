@@ -1,0 +1,29 @@
+{
+  "name": "career-ops-ai-job-scanner",
+  "version": "1.0.0",
+  "description": "Personalized Career Ops job scanner for technical GTM and AI/SaaS roles.",
+  "private": false,
+  "type": "module",
+  "scripts": {
+    "scan": "node scan.mjs",
+    "validate:portals": "node validate-portals.mjs",
+    "test": "node --check scan.mjs && node --check providers/jooble.mjs && node requirements-safeguard.test.mjs && node jooble-provider.test.mjs && node live-verification.test.mjs && node verification-classification.test.mjs"
+  },
+  "keywords": [
+    "job-search",
+    "career-ops",
+    "job-scanner",
+    "technical-gtm",
+    "solutions-engineering"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/purraxis/career-ops-ai-job-scanner.git"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.0.0",
+    "js-yaml": "^4.1.1",
+    "playwright": "1.61.1"
+  }
+}

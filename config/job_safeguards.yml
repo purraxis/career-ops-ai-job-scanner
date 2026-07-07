@@ -1,0 +1,87 @@
+# Strict pre-pipeline requirements gate for the scanner.
+# These rules are intentionally conservative: when level or sponsorship fit is
+# doubtful, the scanner should reject or manual-review instead of saving to
+# data/pipeline.md.
+
+enabled: true
+manual_review_on_doubt: true
+max_required_years: 3
+
+entry_level_signals:
+  - "junior"
+  - "associate"
+  - "entry level"
+  - "entry-level"
+  - "early career"
+  - "new grad"
+  - "new graduate"
+  - "university graduate"
+  - "graduate program"
+  - "campus"
+  - "academy"
+  - "rotational"
+  - "0-2 years"
+  - "0 to 2 years"
+  - "1-2 years"
+  - "1 to 2 years"
+  - "0-3 years"
+  - "1-3 years"
+
+senior_title_terms:
+  - "senior"
+  - "sr."
+  - "sr"
+  - "lead"
+  - "staff"
+  - "principal"
+  - "manager"
+  - "director"
+  - "architect"
+  - "head of"
+  - "vp"
+  - "vice president"
+  - "executive"
+
+senior_requirement_patterns:
+  - "mentor junior"
+  - "mentoring junior"
+  - "lead a team"
+  - "lead technical strategy"
+  - "own technical strategy"
+  - "set technical direction"
+  - "architecture ownership"
+  - "enterprise architecture"
+  - "manage a team"
+  - "people management"
+  - "quota carrying account executive"
+
+sponsorship_reject_patterns:
+  - "no sponsorship"
+  - "visa sponsorship is not available"
+  - "sponsorship is not available"
+  - "unable to sponsor"
+  - "does not sponsor"
+  - "will not sponsor"
+  - "cannot sponsor"
+  - "h1b sponsorship is not available"
+  - "h-1b sponsorship is not available"
+  - "no h1b sponsorship"
+  - "no h-1b sponsorship"
+  - "must not require sponsorship"
+  - "without sponsorship"
+  - "authorized to work without sponsorship"
+  - "authorized to work in the united states without sponsorship"
+  - "permanent work authorization required"
+  - "green card holder"
+  - "must be a green card holder"
+  - "u.s. citizen or green card"
+  - "us citizen or green card"
+  - "now or in the future"
+  - "u.s. citizen only"
+  - "us citizen only"
+  - "must be a u.s. citizen"
+  - "must be a us citizen"
+  - "active security clearance"
+  - "security clearance required"
+  - "secret clearance"
+  - "ts/sci"

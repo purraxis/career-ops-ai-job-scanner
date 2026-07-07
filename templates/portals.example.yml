@@ -1,0 +1,104 @@
+# Public example scanner configuration.
+# Copy to portals.yml and customize locally. Do not commit your local portals.yml.
+
+verify_live_jobs: true
+max_post_age_days: 7
+max_job_age_days: 7
+
+requirements_safeguard:
+  enabled: true
+  path: config/job_safeguards.yml
+  max_required_years: 3
+  manual_review_on_doubt: true
+
+title_filter:
+  positive:
+    - "solutions engineer"
+    - "solutions consultant"
+    - "sales engineer"
+    - "technical consultant"
+    - "implementation consultant"
+    - "implementation engineer"
+    - "customer engineer"
+    - "technical success engineer"
+    - "product solutions"
+    - "ai solutions"
+    - "data solutions"
+    - "cloud solutions"
+    - "forward deployed engineer"
+  negative:
+    - "senior"
+    - "staff"
+    - "principal"
+    - "director"
+    - "manager"
+    - "commission only"
+
+location_filter:
+  allow:
+    - "Remote"
+    - "United States"
+    - "US"
+  block:
+    - "Europe only"
+    - "UK only"
+
+salary_filter:
+  min_base: 65000
+  min_ote: 85000
+  reject_commission_only: true
+
+work_authorization_filter:
+  reject:
+    - "no sponsorship"
+    - "visa sponsorship is not available"
+    - "must be a us citizen"
+    - "active security clearance"
+    - "authorized to work without sponsorship"
+
+role_tiers:
+  tier_1_priority:
+    - "Associate Solutions Engineer"
+    - "Junior Solutions Engineer"
+    - "Solutions Engineer"
+    - "Sales Engineer"
+    - "Solutions Consultant"
+    - "Customer Engineer"
+    - "AI Solutions Consultant"
+    - "Data Solutions Consultant"
+    - "Forward Deployed Engineer"
+  tier_2_strong_fit:
+    - "Technical Consultant"
+    - "Implementation Consultant"
+    - "Implementation Engineer"
+    - "Technical Success Engineer"
+    - "Product Solutions Specialist"
+    - "Cloud Solutions Consultant"
+  tier_3_broad_fallback:
+    - "Revenue Operations Analyst"
+    - "Sales Operations Analyst"
+    - "GTM Engineer Associate"
+    - "AI Operations Analyst"
+    - "Customer Onboarding Specialist"
+
+us_aggregator_sources:
+  adzuna:
+    enabled: true
+    country: us
+    maxPages: 1
+    pageSize: 25
+  jooble:
+    enabled: true
+    country: us
+    maxPages: 2
+    pageSize: 20
+  careerjet:
+    enabled: false
+    country: us
+    reason: "Enable only after API credentials are available."
+  usajobs:
+    enabled: false
+    country: us
+    reason: "Many roles require citizenship or federal eligibility."
+
+tracked_companies: []

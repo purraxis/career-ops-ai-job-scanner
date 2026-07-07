@@ -1,0 +1,253 @@
+# Career Ops: Personalized Job Scanner
+
+This repository is my customized Career Ops system for managing a technical GTM and AI/SaaS job search. It started as a fork of `santifer/career-ops`, and I adapted the scanner, filters, provider integrations, and documentation around my own job-search workflow.
+
+The system helps me scan job sources, normalize postings, reject bad-fit roles, live-verify job links, and maintain a focused pipeline of roles worth reviewing or applying to.
+
+## Why I Customized This
+
+Generic job boards produce a lot of noise: stale listings, senior roles disguised by broad titles, jobs with unclear sponsorship language, commission-heavy roles, and postings that look relevant only because they match one keyword.
+
+I customized this project to make the scanner behave more like a career-operations assistant for my search. The goal is not to save every possible match. The goal is to find fresh, entry-level-friendly, technically aligned roles and keep bad-fit postings out of my pipeline.
+
+My target search area is technical GTM and customer-facing technology work, including:
+
+- Solutions Engineering and Sales Engineering
+- Solutions Consulting and Technical Consulting
+- Implementation and Professional Services
+- Technical Customer Success and Customer Engineering
+- AI, data, automation, cloud, and SaaS solution roles
+- Select technical GTM operations roles when they match my profile
+
+## What This System Does
+
+- Reads job-source configuration from `portals.yml`.
+- Fetches jobs from direct providers and U.S. aggregator APIs.
+- Normalizes raw provider data into a common internal job shape.
+- Applies freshness, role-fit, seniority, sponsorship, compensation, and location filters.
+- Deduplicates jobs before they reach the pipeline.
+- Live-verifies job URLs before saving them.
+- Writes verified matches to `data/pipeline.md`.
+- Writes rejected or questionable jobs to audit/review outputs instead of mixing them with verified matches.
+
+This is a human-in-the-loop workflow. The scanner helps prioritize and audit opportunities, but it does not submit applications for me.
+
+## My Customizations
+
+The main customizations in this fork are:
+
+- Technical GTM role targeting using the existing role-tier architecture.
+- Expanded role coverage for associate, junior, entry-level, early-career, implementation, customer-facing, AI/SaaS, and GTM-adjacent roles.
+- Strict 7-day posting freshness filtering through `max_post_age_days: 7`.
+- Entry-level and associate safeguards that reject obvious senior, staff, principal, lead, manager, director, architect, or high-years-experience roles.
+- Sponsorship safeguards that reject explicit no-sponsorship, U.S. citizen-only, green-card-only, and authorized-without-sponsorship language.
+- Compensation and location filters tailored to my search preferences.
+- Live job verification before writing jobs into the pipeline.
+- Rejected-job logging so I can audit why postings were filtered out.
+- U.S. aggregator provider support, including Adzuna and Jooble.
+- Provider-aware verification behavior for redirect-heavy aggregator links.
+
+## Job Matching And Filtering Logic
+
+The scanner is designed around quality over quantity. A job must survive multiple gates before it can enter `data/pipeline.md`.
+
+The intended flow is:
+
+```text
+source fetch
+  -> normalize job
+  -> extract posting date
+  -> freshness gate
+  -> role and seniority gate
+  -> sponsorship gate
+  -> compensation and location gate
+  -> dedupe
+  -> live verification
+  -> pipeline output or rejection log
+```
+
+Key rules:
+
+- Jobs must have a reliable posting date within the configured freshness window.
+- Jobs older than 7 days are rejected.
+- Jobs with missing or unreliable posting dates do not automatically pass.
+- Strong keyword matches do not override seniority, sponsorship, location, or compensation safeguards.
+- Roles with explicit no-sponsorship language are rejected even if the title is a strong match.
+- Jobs must be live-verified before being written to the verified pipeline.
+
+## Architecture Overview
+
+```mermaid
+flowchart TD
+    A["Config: portals.yml, profile, safeguards"] --> B["Job Sources"]
+    B --> C["Provider Fetch"]
+    C --> D["Normalize Jobs"]
+    D --> E["Freshness Filter"]
+    E --> F["Role and Seniority Filter"]
+    F --> G["Sponsorship Filter"]
+    G --> H["Compensation and Location Filter"]
+    H --> I["Deduplication"]
+    I --> J["Live Verification"]
+    J --> K["data/pipeline.md"]
+    J --> L["Rejected or Review Logs"]
+```
+
+Important scanner files:
+
+- `scan.mjs`: main scan pipeline, filtering, freshness checks, verification, dedupe, and output routing.
+- `providers/adzuna.mjs`: Adzuna API provider.
+- `providers/jooble.mjs`: Jooble API provider.
+- `portals.yml`: local job-source, role-tier, location, freshness, and provider configuration.
+- `config/job_safeguards.yml`: strict seniority, years-of-experience, sponsorship, and role-fit safeguards.
+- `data/pipeline.md`: verified job pipeline output.
+- `data/rejected-jobs.tsv`: rejected-job audit output.
+- `data/needs-review.md`: optional manual-review output when enabled.
+
+## Important Safeguards
+
+### Freshness
+
+This fork uses a strict freshness window:
+
+```yaml
+max_post_age_days: 7
+max_job_age_days: 7
+```
+
+`max_job_age_days` is retained for compatibility, but the active intent is a 7-day posting-date gate. A discovered date, scraped date, or scan date should not be treated as a real posting date unless the source has no better date and the job is routed for review instead of automatic save.
+
+### Seniority
+
+The scanner prioritizes roles that are entry-level, junior, associate, new-grad, early-career, or approximately 0-3 years of experience.
+
+It rejects obvious senior roles, including titles or descriptions with senior, staff, principal, lead, manager, director, VP, head of, architect, or high required years of experience unless the posting clearly belongs to an associate support lane and is handled conservatively.
+
+### Sponsorship
+
+Explicit sponsorship blockers are treated as hard rejections. The scanner rejects jobs that say no sponsorship, no visa sponsorship, must be a U.S. citizen, green-card-only, permanent authorization required, or authorized without sponsorship.
+
+Unknown sponsorship is not treated as a guarantee. It remains an evaluation signal.
+
+### Compensation And Location
+
+Compensation and location filters remain part of the scan pipeline. The technical GTM expansion does not weaken those filters.
+
+The scanner is configured around U.S.-based and relocation-friendly roles, with remote U.S. and major U.S. tech hubs prioritized.
+
+### Live Verification
+
+Jobs must pass live verification before being saved to `data/pipeline.md`. The verifier checks final URLs, HTTP status, expired/closed text, unavailable pages, and provider redirect behavior.
+
+Jobs that are dead, expired, blocked, duplicate, missing reliable dates, or otherwise unverified are routed away from the verified pipeline.
+
+## Challenges And Fixes
+
+### Stale Aggregator Listings
+
+Some third-party API listings can remain available through an API even after the actual job page is gone. The scanner now verifies job links before writing them to the pipeline and records stale or rejected jobs in an audit log.
+
+### Aggregator Redirects And Bot Blocking
+
+Jooble links can use redirect-style URLs that return HTTP 403 or trigger browser-like access requirements during verification. I added provider-aware verification behavior and classification so these jobs are not blindly saved, but can still be audited or routed for manual review when appropriate.
+
+### Overly Broad Freshness
+
+The scanner previously supported a broader age window. I tightened the configured freshness gate to 7 days so the pipeline focuses on current postings instead of older jobs that may already be stale or heavily saturated.
+
+### Keyword Matches Were Not Enough
+
+Some roles can look relevant by title while still requiring senior-level experience or containing explicit sponsorship blockers. I added a requirements safeguard layer so freshness and keyword matches cannot override seniority or sponsorship fit.
+
+## Project Status
+
+Current state:
+
+- The scanner is customized for my technical GTM and AI/SaaS job search.
+- Adzuna and Jooble provider modules exist as separate aggregator providers.
+- Live verification is part of the save path before jobs enter the pipeline.
+- Strict 7-day freshness, seniority, sponsorship, compensation, and location safeguards are represented in the scanner/configuration.
+- Rejected-job and manual-review routing exists for auditability.
+
+This repo is still a personalized working system, not a general-purpose product release. Some local files contain private job-search data and should not be committed publicly.
+
+## How To Run Locally
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Install Chromium for Playwright-backed verification and document generation:
+
+```bash
+npx playwright install chromium
+```
+
+Create a local environment file:
+
+```bash
+cp .env.example .env
+```
+
+Create a local scanner configuration from the public template:
+
+```bash
+cp templates/portals.example.yml portals.yml
+```
+
+Add provider credentials as needed:
+
+```bash
+ADZUNA_APP_ID=your_adzuna_app_id_here
+ADZUNA_APP_KEY=your_adzuna_app_key_here
+JOOBLE_API_KEY=your_jooble_api_key_here
+```
+
+Validate configuration:
+
+```bash
+npm run validate:portals
+```
+
+Run a safe dry run:
+
+```bash
+npm run scan -- --dry-run
+```
+
+Run a real scan:
+
+```bash
+npm run scan
+```
+
+## Privacy And Commit Hygiene
+
+This project uses local files that may contain personal data, application history, job-search strategy, or API credentials. Before pushing publicly, review the working tree carefully.
+
+Files that should generally stay private include:
+
+- `.env`
+- `cv.md`
+- `config/profile.yml`
+- `portals.yml`
+- `data/pipeline.md`
+- `data/scan-history.tsv`
+- `data/rejected-jobs.tsv`
+- `data/scan-results-*.md`
+- `data/needs-review.md`
+- `output/`
+- personal writing samples, story banks, and application materials
+
+The `.gitignore` protects many personal files, but untracked generated files should still be checked before committing.
+
+## Repository Origin And Attribution
+
+This project was originally forked from `santifer/career-ops`. I customized it into a personalized Career Ops system for my own technical GTM and AI/SaaS job search workflow. Original project structure and license are preserved where applicable.
+
+The original project provided the open-source foundation for the broader Career Ops workflow. This fork focuses on my own scanner configuration, role targeting, provider integrations, filtering safeguards, and pipeline process.
+
+## License
+
+This repository preserves the original license where applicable. See `LICENSE` for details.
