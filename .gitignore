@@ -47,6 +47,7 @@ career-notes*
 data/pipeline.md
 data/rejected-jobs.tsv
 data/scan-results-*.md
+data/needs-review.md
 output/
 tmp/
 reports/*.patch
@@ -56,6 +57,7 @@ reports/*.patch
 config/profile.yml
 portals.yml
 cv.md
+private/
 
 # Personal documents — never commit scans or copies of these (PII).
 # Catches common identity/credential filenames so they can't be staged by accident.
