@@ -32,7 +32,7 @@ function resolveApiUrl(entry) {
     return entry.api;
   }
   const url = entry.careers_url || '';
-  const match = url.match(/job-boards(?:\.eu)?\.greenhouse\.io\/([^/?#]+)/);
+  const match = url.match(/(?:job-boards(?:\.eu)?|boards)\.greenhouse\.io\/([^/?#]+)/);
   if (match) return `https://boards-api.greenhouse.io/v1/boards/${match[1]}/jobs`;
   return null;
 }

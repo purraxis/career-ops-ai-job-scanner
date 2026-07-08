@@ -7,7 +7,7 @@
   "scripts": {
     "scan": "node scan.mjs",
     "validate:portals": "node validate-portals.mjs",
-    "test": "node --check scan.mjs && node --check providers/jooble.mjs && node requirements-safeguard.test.mjs && node jooble-provider.test.mjs && node live-verification.test.mjs && node verification-classification.test.mjs"
+    "test": "node --check scan.mjs && node --check providers/jooble.mjs && node ats-provider.test.mjs && node requirements-safeguard.test.mjs && node jooble-provider.test.mjs && node live-verification.test.mjs && node verification-classification.test.mjs"
   },
   "keywords": [
     "job-search",

@@ -99,9 +99,49 @@ async function loadProviderIds() {
   return ids;
 }
 
-export async function validatePortalsConfig(config, { providerIds = new Set() } = {}) {
+async function loadProviders() {
+  const providers = [];
+  if (!existsSync(PROVIDERS_DIR)) return providers;
+  const files = readdirSync(PROVIDERS_DIR)
+    .filter(f => f.endsWith('.mjs') && !f.startsWith('_'))
+    .sort();
+  for (const file of files) {
+    const mod = await import(pathToFileURL(join(PROVIDERS_DIR, file)).href);
+    if (mod.default?.id && typeof mod.default.fetch === 'function') providers.push(mod.default);
+  }
+  return providers;
+}
+
+function detectProvider(entry, providers = []) {
+  if (entry.provider) return entry.provider;
+  for (const provider of providers) {
+    let hit;
+    try {
+      hit = provider.detect?.(entry);
+    } catch {
+      continue;
+    }
+    if (hit) return provider.id;
+  }
+  return null;
+}
+
+function providerSummaryLabel(providerId) {
+  if (providerId === 'ashby') return 'Ashby';
+  if (providerId === 'greenhouse') return 'Greenhouse';
+  if (providerId === 'lever') return 'Lever';
+  return null;
+}
+
+export async function validatePortalsConfig(config, { providerIds = new Set(), providers = [] } = {}) {
   const errors = [];
   const warnings = [];
+  const providerDetectionSummary = {
+    Ashby: 0,
+    Greenhouse: 0,
+    Lever: 0,
+    'Unsupported/custom': 0,
+  };
 
   if (!isObject(config)) {
     add(errors, '<root>', 'portals config must be a YAML object');
@@ -179,10 +219,23 @@ export async function validatePortalsConfig(config, { providerIds = new Set() } 
       }
 
       validateParser(company.parser, `${base}.parser`, errors);
+
+      if (typeof company.careers_url === 'string' && company.careers_url.trim()) {
+        const providerId = detectProvider(company, providers);
+        const label = providerSummaryLabel(providerId);
+        if (label) {
+          providerDetectionSummary[label]++;
+        } else if (providerId) {
+          providerDetectionSummary['Unsupported/custom']++;
+        } else {
+          providerDetectionSummary['Unsupported/custom']++;
+          add(warnings, base, `WARN: No provider matched tracked company: ${company.name} - ${company.careers_url}`);
+        }
+      }
     }
   }
 
-  return { errors, warnings };
+  return { errors, warnings, providerDetectionSummary };
 }
 
 function formatIssue(issue) {
@@ -194,8 +247,9 @@ async function validateFile(filePath) {
     throw new Error(`file not found: ${filePath}`);
   }
   const providerIds = await loadProviderIds();
+  const providers = await loadProviders();
   const parsed = yaml.load(readFileSync(filePath, 'utf-8'));
-  return validatePortalsConfig(parsed, { providerIds });
+  return validatePortalsConfig(parsed, { providerIds, providers });
 }
 
 async function runSelfTest() {
@@ -246,6 +300,12 @@ async function main() {
   for (const warning of result.warnings) console.log(`warning: ${formatIssue(warning)}`);
   for (const error of result.errors) console.log(`error: ${formatIssue(error)}`);
   console.log(`${result.errors.length} errors, ${result.warnings.length} warnings`);
+  if (result.providerDetectionSummary) {
+    console.log('\nTracked company provider detection:');
+    for (const [provider, count] of Object.entries(result.providerDetectionSummary)) {
+      console.log(`- ${provider}: ${count}`);
+    }
+  }
 
   if (result.errors.length > 0) process.exit(1);
 }

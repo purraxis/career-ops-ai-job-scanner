@@ -45,6 +45,8 @@ The main customizations in this fork are:
 - Live job verification before writing jobs into the pipeline.
 - Rejected-job logging so I can audit why postings were filtered out.
 - U.S. aggregator provider support, including Adzuna and Jooble.
+- Direct ATS board support for Ashby, Greenhouse, and Lever company boards.
+- Portal validation that reports which tracked companies resolve to supported ATS providers.
 - Provider-aware verification behavior for redirect-heavy aggregator links.
 
 ## Job Matching And Filtering Logic
@@ -98,13 +100,32 @@ flowchart LR
 Important scanner files:
 
 - `scan.mjs`: main scan pipeline, filtering, freshness checks, verification, dedupe, and output routing.
+- `providers/ashby.mjs`: Ashby direct company-board provider.
+- `providers/greenhouse.mjs`: Greenhouse direct company-board provider, including current and older board URL formats.
+- `providers/lever.mjs`: Lever direct company-board provider.
 - `providers/adzuna.mjs`: Adzuna API provider.
 - `providers/jooble.mjs`: Jooble API provider.
+- `validate-portals.mjs`: validates portal configuration and reports provider detection for tracked company boards.
 - `portals.yml`: local job-source, role-tier, location, freshness, and provider configuration.
 - `config/job_safeguards.yml`: strict seniority, years-of-experience, sponsorship, and role-fit safeguards.
 - `data/pipeline.md`: verified job pipeline output.
 - `data/rejected-jobs.tsv`: rejected-job audit output.
 - `data/needs-review.md`: optional manual-review output when enabled.
+
+### Direct ATS Company Boards
+
+The scanner can read direct company boards from supported ATS providers. This lets a private `tracked_companies` list point to first-party company hiring pages instead of relying only on broad job-board aggregators.
+
+Supported direct ATS URL formats include:
+
+- Ashby: `https://jobs.ashbyhq.com/{companySlug}`
+- Lever: `https://jobs.lever.co/{companySlug}`
+- Greenhouse: `https://job-boards.greenhouse.io/{companySlug}`
+- Greenhouse EU: `https://job-boards.eu.greenhouse.io/{companySlug}`
+- Greenhouse legacy: `https://boards.greenhouse.io/{companySlug}`
+- Greenhouse API: `https://boards-api.greenhouse.io/v1/boards/{companySlug}/jobs`
+
+`npm run validate:portals` reports how many tracked companies resolve to Ashby, Greenhouse, Lever, or unsupported/custom sources. Unsupported company career pages are warnings rather than hard failures, because some target companies intentionally require web search or custom handling.
 
 ## Important Safeguards
 
