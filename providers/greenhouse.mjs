@@ -29,12 +29,20 @@ function assertGreenhouseUrl(url) {
 function resolveApiUrl(entry) {
   if (entry.api) {
     assertGreenhouseUrl(entry.api);
-    return entry.api;
+    return withContentParam(entry.api);
   }
   const url = entry.careers_url || '';
   const match = url.match(/(?:job-boards(?:\.eu)?|boards)\.greenhouse\.io\/([^/?#]+)/);
-  if (match) return `https://boards-api.greenhouse.io/v1/boards/${match[1]}/jobs`;
+  if (match) return `https://boards-api.greenhouse.io/v1/boards/${match[1]}/jobs?content=true`;
   return null;
+}
+
+function withContentParam(url) {
+  const parsed = new URL(url);
+  if (parsed.hostname === 'boards-api.greenhouse.io' && /\/jobs\/?$/i.test(parsed.pathname)) {
+    parsed.searchParams.set('content', 'true');
+  }
+  return parsed.toString();
 }
 
 // NaN-safe Date.parse — `|| undefined` would also coerce a valid epoch 0.
@@ -42,6 +50,36 @@ function toEpochMs(value) {
   if (!value) return undefined;
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function htmlToText(value) {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|ul|ol|h[1-6])>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function descriptionText(job) {
+  return [
+    job.content,
+    job.description,
+    job.descriptionHtml,
+    job.descriptionPlain,
+    job.job_description,
+  ].map(htmlToText).filter(Boolean).join('\n\n');
 }
 
 /** @type {Provider} */
@@ -70,6 +108,7 @@ export default {
       url: j.absolute_url,
       company: entry.name,
       location: j.location?.name || '',
+      description: descriptionText(j),
       postedAt: toEpochMs(j.first_published),
     }));
   },

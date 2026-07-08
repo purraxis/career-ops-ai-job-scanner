@@ -342,6 +342,7 @@ const DEFAULT_WORK_AUTH_REJECT_PATTERNS = [
   /must be a u\.?s\.? citizen/i,
   /active security clearance/i,
   /security clearance required/i,
+  /\bclearance required\b/i,
   /\bts\/sci\b/i,
   /\bsecret clearance\b/i,
 ];
@@ -439,6 +440,7 @@ const DEFAULT_REQUIREMENTS_SAFEGUARD = {
     'must be a us citizen',
     'active security clearance',
     'security clearance required',
+    'clearance required',
     'secret clearance',
     'ts/sci',
   ],
@@ -509,7 +511,176 @@ function explicitEntryLevelSignal(text, signals = []) {
   }) || '';
 }
 
+const NUMBER_WORDS = new Map([
+  ['zero', 0],
+  ['one', 1],
+  ['two', 2],
+  ['three', 3],
+  ['four', 4],
+  ['five', 5],
+  ['six', 6],
+  ['seven', 7],
+  ['eight', 8],
+  ['nine', 9],
+  ['ten', 10],
+]);
+
+function parseYearNumber(value) {
+  const raw = String(value || '').toLowerCase().trim();
+  if (NUMBER_WORDS.has(raw)) return NUMBER_WORDS.get(raw);
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function parseYearRequirement(input, { maxRequiredYears = 3, entryLevelSignals = [] } = {}) {
+  const text = Array.isArray(input)
+    ? input.filter(Boolean).join(' ')
+    : String(input || '');
+  const normalized = text
+    .toLowerCase()
+    .replace(/[–—]/g, '-')
+    .replace(/\s+/g, ' ');
+  const hits = [];
+  const num = '(?:\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten)';
+  const yearUnit = '(?:years?|yrs?)';
+  const expTail = '(?:\\s+(?:of\\s+)?(?:professional\\s+|relevant\\s+|related\\s+|industry\\s+|sales\\s+|engineering\\s+|implementation\\s+|technical\\s+|customer-facing\\s+|work\\s+)?experience)?';
+  const addHit = (kind, minRaw, maxRaw, matchText) => {
+    const min = parseYearNumber(minRaw);
+    const max = parseYearNumber(maxRaw ?? minRaw);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return;
+    hits.push({ kind, min, max, text: String(matchText || '').trim() });
+  };
+
+  const patterns = [
+    { kind: 'range', re: new RegExp(`\\b(${num})\\s*(?:-|to)\\s*(${num})\\s*${yearUnit}${expTail}`, 'gi') },
+    { kind: 'plus', re: new RegExp(`\\b(${num})\\s*\\+\\s*${yearUnit}${expTail}`, 'gi') },
+    { kind: 'minimum', re: new RegExp(`\\b(?:minimum(?:\\s+of)?|at\\s+least)\\s+(${num})\\s*${yearUnit}${expTail}`, 'gi') },
+    { kind: 'up_to', re: new RegExp(`\\bup\\s+to\\s+(${num})\\s*${yearUnit}${expTail}`, 'gi') },
+    { kind: 'exact', re: new RegExp(`\\b(${num})\\s*${yearUnit}\\s+(?:of\\s+)?(?:professional\\s+|relevant\\s+|related\\s+|industry\\s+|sales\\s+|engineering\\s+|implementation\\s+|technical\\s+|customer-facing\\s+|work\\s+)?experience`, 'gi') },
+  ];
+
+  for (const { kind, re } of patterns) {
+    for (const match of normalized.matchAll(re)) {
+      if (kind === 'range') addHit(kind, match[1], match[2], match[0]);
+      else if (kind === 'up_to') addHit(kind, 0, match[1], match[0]);
+      else addHit(kind, match[1], match[1], match[0]);
+    }
+  }
+
+  const signalHits = [];
+  for (const signal of entryLevelSignals) {
+    const pattern = phrasePattern(signal);
+    if (pattern && pattern.test(normalized)) signalHits.push(signal);
+  }
+  for (const signal of ['new grad', 'recent graduate', 'early career', 'entry level', 'entry-level']) {
+    const pattern = phrasePattern(signal);
+    if (pattern && pattern.test(normalized) && !signalHits.includes(signal)) signalHits.push(signal);
+  }
+
+  const maxRequired = Math.max(0, Number(maxRequiredYears ?? 3));
+  const rejectingHit = hits.find((hit) => hit.min > maxRequired || hit.max > maxRequired);
+  const acceptableHit = hits.find((hit) => hit.max <= maxRequired);
+  let decision = 'unclear';
+  let reason = 'no year requirement found';
+  if (rejectingHit) {
+    decision = 'reject';
+    reason = `requires more than ${maxRequired} years: ${rejectingHit.text}`;
+  } else if (acceptableHit) {
+    decision = 'acceptable';
+    reason = `year requirement within ${maxRequired} years: ${acceptableHit.text}`;
+  } else if (signalHits.length > 0) {
+    decision = 'acceptable';
+    reason = `entry-level signal matched: ${signalHits[0]}`;
+  }
+
+  return {
+    decision,
+    reason,
+    hits,
+    phrases: hits.map(h => h.text),
+    entryLevelSignals: signalHits,
+    maxRequiredYears: maxRequired,
+  };
+}
+
 function experienceYearHits(text) {
+  return parseYearRequirement(text).hits;
+}
+
+function sourceGroup(source = '') {
+  if (['ashby-api', 'greenhouse-api', 'lever-api'].includes(source)) return 'direct_ats';
+  if (['adzuna-api', 'jooble-api', 'themuse-api'].includes(source)) return 'aggregator';
+  if (['remoteok-api', 'remotive-api', 'workingnomads-api'].includes(source)) return 'remote_board';
+  return 'other';
+}
+
+function isStrongRoleMatch(roleTierMatch = {}) {
+  return ['tier_1_priority', 'tier_2_strong_fit'].includes(roleTierMatch?.tier);
+}
+
+function buildSafeguardEvidence(job, config, {
+  source = '',
+  roleTierMatch = null,
+  reviewCategory = '',
+  yearInfo = null,
+  seniorTerm = '',
+  seniorResponsibilityHit = '',
+  sponsorshipHit = '',
+  entrySignal = '',
+  status = '',
+  reason = '',
+} = {}) {
+  const description = typeof job.description === 'string' ? job.description : '';
+  return {
+    descriptionAvailable: description.trim().length > 0,
+    descriptionLength: description.length,
+    detectedYearPhrases: yearInfo?.phrases?.length ? yearInfo.phrases : [],
+    yearRequirementDecision: yearInfo?.decision || 'unclear',
+    matchedPositiveRolePhrases: dedupeStrings([
+      roleTierMatch?.title || '',
+      entrySignal || '',
+      ...(yearInfo?.entryLevelSignals || []),
+    ]),
+    matchedNegativeRolePhrases: dedupeStrings([seniorTerm, seniorResponsibilityHit]),
+    matchedWorkAuthorizationPhrases: dedupeStrings([sponsorshipHit]),
+    provider: source,
+    providerSourceTrustLevel: sourceGroup(source),
+    reviewCategory,
+    whyNotRejected: status === 'manual_review' ? reason : '',
+    whyNotAccepted: status === 'manual_review' ? reason : '',
+  };
+}
+
+function withSafeguardEvidence(result, evidence) {
+  return { ...result, evidence: { ...(result.evidence || {}), ...evidence } };
+}
+
+export function parseJoobleJobAgeDaysFromUrl(value) {
+  if (!value) return null;
+  try {
+    const parsed = new URL(String(value));
+    const raw = parsed.searchParams.get('jobAge') || parsed.searchParams.get('jobage') || parsed.searchParams.get('age');
+    if (raw == null || raw === '') return null;
+    const age = Number(raw);
+    return Number.isFinite(age) ? age : null;
+  } catch {
+    return null;
+  }
+}
+
+export function joobleJobAgeDecision(job, maxJobAgeDays = DEFAULT_MAX_JOB_AGE_DAYS) {
+  const ages = [job?.url, job?.applyUrl, job?.finalUrl]
+    .map(parseJoobleJobAgeDaysFromUrl)
+    .filter(Number.isFinite);
+  if (!ages.length) return { status: 'pass', reason: 'no jooble jobAge metadata' };
+  const maxAge = Math.max(...ages);
+  if (maxAge > maxJobAgeDays) {
+    return { status: 'reject', reason: `stale_jooble_job_age (${maxAge}d > ${maxJobAgeDays}d)` };
+  }
+  return { status: 'pass', reason: `jooble jobAge within max_post_age_days (${maxAge}d <= ${maxJobAgeDays}d)` };
+}
+
+function experienceYearHitsLegacy(text) {
   const hits = [];
   const patterns = [
     /(\d+)\s*\+\s*(?:years?|yrs?)(?:\s+of)?(?:\s+(?:professional|relevant|related|industry|sales|engineering|implementation|technical))?\s+experience/gi,
@@ -530,7 +701,7 @@ function experienceYearHits(text) {
   return hits;
 }
 
-function makeSafeguardRejection(job, source, reason, classification = 'requirements_safeguard') {
+function makeSafeguardRejection(job, source, reason, classification = 'requirements_safeguard', evidence = null) {
   return {
     ...job,
     source,
@@ -541,13 +712,17 @@ function makeSafeguardRejection(job, source, reason, classification = 'requireme
     activeVerificationStatus: 'rejected',
     rejectionReason: reason,
     requiresHumanReview: classification === 'manual_review',
+    reviewEvidence: evidence || job.reviewEvidence || null,
   };
 }
 
-export function evaluateRequirementsSafeguard(job, config = DEFAULT_REQUIREMENTS_SAFEGUARD) {
+export function evaluateRequirementsSafeguard(job, config = DEFAULT_REQUIREMENTS_SAFEGUARD, options = {}) {
   if (!config?.enabled) {
     return { status: 'pass', reason: 'requirements safeguard disabled' };
   }
+  const source = options.source || job.source || '';
+  const roleTierMatch = options.roleTierMatch || job.roleTierMatch || null;
+  const providerGroup = sourceGroup(source);
   const title = String(job.title || '');
   const description = String(job.description || '');
   const location = String(job.location || '');
@@ -555,10 +730,26 @@ export function evaluateRequirementsSafeguard(job, config = DEFAULT_REQUIREMENTS
   const combinedLower = combined.toLowerCase();
   const titleLower = title.toLowerCase();
   const entrySignal = explicitEntryLevelSignal(combinedLower, config.entry_level_signals);
+  const yearInfo = parseYearRequirement(combinedLower, {
+    maxRequiredYears: config.max_required_years,
+    entryLevelSignals: config.entry_level_signals,
+  });
+  const evidenceBase = {
+    source,
+    roleTierMatch,
+    yearInfo,
+    entrySignal,
+  };
 
   const seniorTerm = seniorTitleHit(titleLower, config.senior_title_terms);
   if (seniorTerm) {
-    return { status: 'reject', reason: `senior title term: ${seniorTerm}` };
+    const result = { status: 'reject', reason: `senior title term: ${seniorTerm}` };
+    return withSafeguardEvidence(result, buildSafeguardEvidence(job, config, {
+      ...evidenceBase,
+      seniorTerm,
+      status: result.status,
+      reason: result.reason,
+    }));
   }
 
   const sponsorshipHit = config.sponsorship_reject_patterns.find((phrase) => {
@@ -566,7 +757,13 @@ export function evaluateRequirementsSafeguard(job, config = DEFAULT_REQUIREMENTS
     return pattern ? pattern.test(combinedLower) : false;
   });
   if (sponsorshipHit) {
-    return { status: 'reject', reason: `explicit sponsorship/work authorization blocker: ${sponsorshipHit}` };
+    const result = { status: 'reject', reason: `explicit sponsorship/work authorization blocker: ${sponsorshipHit}` };
+    return withSafeguardEvidence(result, buildSafeguardEvidence(job, config, {
+      ...evidenceBase,
+      sponsorshipHit,
+      status: result.status,
+      reason: result.reason,
+    }));
   }
 
   const seniorResponsibilityHit = config.senior_requirement_patterns.find((phrase) => {
@@ -574,33 +771,87 @@ export function evaluateRequirementsSafeguard(job, config = DEFAULT_REQUIREMENTS
     return pattern ? pattern.test(combinedLower) : false;
   });
   if (seniorResponsibilityHit && !entrySignal) {
-    return { status: 'reject', reason: `senior-level responsibility without entry signal: ${seniorResponsibilityHit}` };
+    const result = { status: 'reject', reason: `senior-level responsibility without entry signal: ${seniorResponsibilityHit}` };
+    return withSafeguardEvidence(result, buildSafeguardEvidence(job, config, {
+      ...evidenceBase,
+      seniorResponsibilityHit,
+      status: result.status,
+      reason: result.reason,
+    }));
   }
   if (seniorResponsibilityHit && entrySignal) {
-    return { status: config.manual_review_on_doubt ? 'manual_review' : 'reject', reason: `entry-level title conflicts with senior responsibility: ${seniorResponsibilityHit}` };
-  }
-
-  const years = experienceYearHits(combinedLower);
-  const maxRequired = Math.max(0, Number(config.max_required_years ?? 3));
-  const tooSeniorExperience = years.find((hit) => hit.min > maxRequired || hit.max > maxRequired);
-  if (tooSeniorExperience && !entrySignal) {
-    return { status: 'reject', reason: `requires more than ${maxRequired} years experience: ${tooSeniorExperience.text}` };
-  }
-  if (tooSeniorExperience && entrySignal) {
-    return { status: config.manual_review_on_doubt ? 'manual_review' : 'reject', reason: `entry-level signal conflicts with >${maxRequired} years requirement: ${tooSeniorExperience.text}` };
-  }
-
-  if (!entrySignal && years.length === 0) {
-    return {
+    const result = {
       status: config.manual_review_on_doubt ? 'manual_review' : 'reject',
-      reason: 'no clear junior/associate/entry-level/new-grad signal or <=3 years requirement',
+      reason: `entry-level title conflicts with senior responsibility: ${seniorResponsibilityHit}`,
     };
+    return withSafeguardEvidence(result, buildSafeguardEvidence(job, config, {
+      ...evidenceBase,
+      seniorResponsibilityHit,
+      reviewCategory: 'senior_responsibility_conflict',
+      status: result.status,
+      reason: result.reason,
+    }));
   }
 
-  const passReason = entrySignal
-    ? `entry-level signal matched: ${entrySignal}`
-    : `experience requirement within ${maxRequired} years`;
-  return { status: 'pass', reason: passReason };
+  const maxRequired = Math.max(0, Number(config.max_required_years ?? 3));
+  if (yearInfo.decision === 'reject') {
+    const result = { status: 'reject', reason: yearInfo.reason };
+    return withSafeguardEvidence(result, buildSafeguardEvidence(job, config, {
+      ...evidenceBase,
+      reviewCategory: 'hard_years_reject',
+      status: result.status,
+      reason: result.reason,
+    }));
+  }
+
+  if (yearInfo.decision === 'acceptable') {
+    const result = { status: 'pass', reason: yearInfo.reason };
+    return withSafeguardEvidence(result, buildSafeguardEvidence(job, config, {
+      ...evidenceBase,
+      status: result.status,
+      reason: result.reason,
+    }));
+  }
+
+  const strongTitle = isStrongRoleMatch(roleTierMatch);
+  const broadTitle = roleTierMatch?.tier === 'tier_3_broad_fallback' || !roleTierMatch?.tier;
+  let status = config.manual_review_on_doubt ? 'manual_review' : 'reject';
+  let reason = `no clear junior/associate/entry-level/new-grad signal or <=${maxRequired} years requirement`;
+  let reviewCategory = 'unclear_years';
+
+  if (providerGroup === 'direct_ats') {
+    if (!strongTitle) {
+      status = 'reject';
+      reason = 'direct ATS role lacks strong title match and clear <=3 years requirement';
+    } else {
+      status = 'manual_review';
+      if (description.trim()) {
+        reason = 'direct ATS strong title but unclear year requirement';
+      } else {
+        reviewCategory = 'missing_description_for_year_detection';
+        reason = 'missing_description_for_year_detection';
+      }
+    }
+  } else if (providerGroup === 'aggregator') {
+    if (strongTitle && !broadTitle) {
+      status = 'manual_review';
+      reason = 'aggregator strong title but unclear year requirement';
+    } else {
+      status = 'reject';
+      reason = 'aggregator broad or weak title with unclear year requirement';
+    }
+  } else if (providerGroup === 'remote_board') {
+    status = 'reject';
+    reason = 'remote-board job has unclear year requirement';
+  }
+
+  const result = { status, reason };
+  return withSafeguardEvidence(result, buildSafeguardEvidence(job, config, {
+    ...evidenceBase,
+    reviewCategory,
+    status: result.status,
+    reason: result.reason,
+  }));
 }
 
 // ── Salary filter ───────────────────────────────────────────────────
@@ -1673,6 +1924,10 @@ export function appendToRejectedJobs(offers, date) {
 }
 
 function formatNeedsReviewEntry(offer, date) {
+  const evidence = offer.reviewEvidence || {};
+  const listOrNone = (values) => Array.isArray(values) && values.length
+    ? values.map(v => sanitizeMarkdownField(v)).join(', ')
+    : 'none';
   const lines = [
     `### ${sanitizeMarkdownField(offer.company || 'Unknown company')} — ${sanitizeMarkdownField(offer.title || 'Untitled role')}`,
     '',
@@ -1683,6 +1938,17 @@ function formatNeedsReviewEntry(offer, date) {
     `- Classification: ${sanitizeMarkdownField(offer.classification || 'unknown_unverified')}`,
     `- Verification method: ${sanitizeMarkdownField(offer.verificationMethod || 'unknown')}`,
     `- Verification reason: ${sanitizeMarkdownField(offer.rejectionReason || 'N/A')}`,
+    `- Description available: ${evidence.descriptionAvailable ? 'yes' : 'no'}`,
+    `- Description length: ${Number.isFinite(evidence.descriptionLength) ? evidence.descriptionLength : 0}`,
+    `- Detected year phrases: ${listOrNone(evidence.detectedYearPhrases)}`,
+    `- Year requirement decision: ${sanitizeMarkdownField(evidence.yearRequirementDecision || 'unclear')}`,
+    `- Matched positive role phrases: ${listOrNone(evidence.matchedPositiveRolePhrases)}`,
+    `- Matched negative role phrases: ${listOrNone(evidence.matchedNegativeRolePhrases)}`,
+    `- Matched work authorization phrases: ${listOrNone(evidence.matchedWorkAuthorizationPhrases)}`,
+    `- Provider/source trust level: ${sanitizeMarkdownField(evidence.providerSourceTrustLevel || sourceGroup(offer.source || ''))}`,
+    `- Review category: ${sanitizeMarkdownField(evidence.reviewCategory || offer.classification || 'manual_review')}`,
+    `- Why not rejected: ${sanitizeMarkdownField(evidence.whyNotRejected || 'N/A')}`,
+    `- Why not accepted: ${sanitizeMarkdownField(evidence.whyNotAccepted || offer.rejectionReason || 'N/A')}`,
     `- Date scanned: ${date}`,
     '- Note: Requires manual review. Not saved to verified pipeline.',
     '',
@@ -2080,32 +2346,6 @@ async function main() {
         job.trustFlags = trustResult.flags;
         job.trustLevel = trustResult.level;
 
-        const freshness = evaluateFreshnessGate(job, {
-          maxJobAgeDays,
-          nowMs: Date.now(),
-          manualReviewOnMissingDate: true,
-        });
-        if (freshness.status !== 'pass') {
-          const stats = ensureProviderStats(sourceName);
-          const rejectedOffer = makeSafeguardRejection(
-            job,
-            sourceName,
-            freshness.reason,
-            freshness.status === 'manual_review' ? 'manual_review' : 'freshness_gate',
-          );
-          if (freshness.status === 'manual_review') {
-            totalManualReviewFreshness++;
-            stats.manualReviewFreshness++;
-            freshnessReviewOffers.push(rejectedOffer);
-          } else {
-            totalFilteredFreshness++;
-            stats.rejectedFreshness++;
-          }
-          stats.rejected++;
-          freshnessRejectedOffers.push(rejectedOffer);
-          continue;
-        }
-
         if (!titleFilter(job.title)) {
           totalFilteredTitle++;
           const stats = ensureProviderStats(sourceName);
@@ -2156,7 +2396,11 @@ async function main() {
           stats.rejected++;
           continue;
         }
-        const safeguard = evaluateRequirementsSafeguard(job, requirementsSafeguard);
+
+        const safeguard = evaluateRequirementsSafeguard(job, requirementsSafeguard, {
+          source: sourceName,
+          roleTierMatch,
+        });
         if (safeguard.status !== 'pass') {
           const stats = ensureProviderStats(sourceName);
           const rejectedOffer = makeSafeguardRejection(
@@ -2164,6 +2408,7 @@ async function main() {
             sourceName,
             safeguard.reason,
             safeguard.status === 'manual_review' ? 'manual_review' : 'requirements_safeguard',
+            safeguard.evidence,
           );
           if (safeguard.status === 'manual_review') {
             totalManualReviewSafeguard++;
@@ -2175,6 +2420,58 @@ async function main() {
           }
           stats.rejected++;
           safeguardRejectedOffers.push(rejectedOffer);
+          continue;
+        }
+
+        if (sourceName === 'jooble-api') {
+          const joobleAge = joobleJobAgeDecision(job, maxJobAgeDays);
+          if (joobleAge.status === 'reject') {
+            totalFilteredFreshness++;
+            const stats = ensureProviderStats(sourceName);
+            stats.rejectedFreshness++;
+            stats.rejected++;
+            const rejectedOffer = makeSafeguardRejection(
+              job,
+              sourceName,
+              joobleAge.reason,
+              'stale_jooble_job_age',
+              safeguard.evidence,
+            );
+            freshnessRejectedOffers.push(rejectedOffer);
+            continue;
+          }
+        }
+
+        const freshness = evaluateFreshnessGate(job, {
+          maxJobAgeDays,
+          nowMs: Date.now(),
+          manualReviewOnMissingDate: true,
+        });
+        if (freshness.status !== 'pass') {
+          const stats = ensureProviderStats(sourceName);
+          const reviewEvidence = {
+            ...(safeguard.evidence || {}),
+            reviewCategory: freshness.status === 'manual_review' ? 'missing_or_unclear_posted_at' : 'freshness_gate',
+            whyNotRejected: freshness.status === 'manual_review' ? 'role passed hard filters but posting date needs manual confirmation' : '',
+            whyNotAccepted: freshness.reason,
+          };
+          const rejectedOffer = makeSafeguardRejection(
+            job,
+            sourceName,
+            freshness.reason,
+            freshness.status === 'manual_review' ? 'manual_review' : 'freshness_gate',
+            reviewEvidence,
+          );
+          if (freshness.status === 'manual_review') {
+            totalManualReviewFreshness++;
+            stats.manualReviewFreshness++;
+            freshnessReviewOffers.push(rejectedOffer);
+          } else {
+            totalFilteredFreshness++;
+            stats.rejectedFreshness++;
+          }
+          stats.rejected++;
+          freshnessRejectedOffers.push(rejectedOffer);
           continue;
         }
         if (seenUrls.has(job.url)) {
@@ -2212,8 +2509,10 @@ async function main() {
           ...job,
           roleTier: roleTierMatch.tier,
           roleTierMatchedTitle: roleTierMatch.title,
+          roleTierMatch,
           safeguardStatus: safeguard.status,
           safeguardReason: safeguard.reason,
+          reviewEvidence: safeguard.evidence || null,
           source: sourceName,
           tracked: Boolean(careersUrlDomain),
           careersUrlDomain,
@@ -2276,9 +2575,12 @@ async function main() {
   if (requirementsSafeguard.enabled && verifiedOffers.length > 0) {
     const finalSafeguardPassed = [];
     for (const offer of verifiedOffers) {
-      const safeguard = evaluateRequirementsSafeguard(offer, requirementsSafeguard);
+      const safeguard = evaluateRequirementsSafeguard(offer, requirementsSafeguard, {
+        source: offer.source,
+        roleTierMatch: offer.roleTierMatch || { tier: offer.roleTier, title: offer.roleTierMatchedTitle },
+      });
       if (safeguard.status === 'pass') {
-        const passedOffer = { ...offer, safeguardStatus: 'pass', safeguardReason: safeguard.reason };
+        const passedOffer = { ...offer, safeguardStatus: 'pass', safeguardReason: safeguard.reason, reviewEvidence: safeguard.evidence || offer.reviewEvidence || null };
         console.log(`  safeguard:pass provider=${passedOffer.source || ''} source_url=${passedOffer.url} company=${passedOffer.company || ''} title=${passedOffer.title || ''} reason=${safeguard.reason}`);
         finalSafeguardPassed.push(passedOffer);
         continue;
@@ -2289,6 +2591,7 @@ async function main() {
         offer.source,
         safeguard.reason,
         safeguard.status === 'manual_review' ? 'manual_review' : 'requirements_safeguard',
+        safeguard.evidence,
       );
       rejectedOffer.fetchedAt = offer.fetchedAt || rejectedOffer.fetchedAt;
       rejectedOffer.finalUrl = offer.finalUrl || offer.url;

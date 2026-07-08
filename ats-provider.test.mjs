@@ -75,7 +75,7 @@ const greenhouseJobs = await greenhouse.fetch(
       eq(
         'old Greenhouse URL converts to boards-api endpoint',
         url,
-        'https://boards-api.greenhouse.io/v1/boards/postman/jobs',
+        'https://boards-api.greenhouse.io/v1/boards/postman/jobs?content=true',
       );
       return {
         jobs: [
@@ -83,6 +83,7 @@ const greenhouseJobs = await greenhouse.fetch(
             title: 'Associate Solutions Engineer',
             absolute_url: 'https://job-boards.greenhouse.io/postman/jobs/123',
             location: { name: 'Remote, US' },
+            content: '<div><p>Requirements include <strong>1-3 years</strong> of experience &amp; demos.</p><script>bad()</script></div>',
             first_published: '2026-07-07T12:00:00Z',
           },
           {
@@ -102,9 +103,11 @@ eq('Greenhouse normalizes title', greenhouseJobs[0].title, 'Associate Solutions 
 eq('Greenhouse normalizes URL', greenhouseJobs[0].url, 'https://job-boards.greenhouse.io/postman/jobs/123');
 eq('Greenhouse normalizes company from entry', greenhouseJobs[0].company, 'Postman');
 eq('Greenhouse normalizes location', greenhouseJobs[0].location, 'Remote, US');
+eq('Greenhouse normalizes description text', greenhouseJobs[0].description.trim(), 'Requirements include 1-3 years of experience & demos.');
 ok('Greenhouse parses postedAt', Number.isFinite(greenhouseJobs[0].postedAt));
 eq('Greenhouse tolerates missing optional fields', greenhouseJobs[1].title, '');
 eq('Greenhouse missing optional location becomes empty string', greenhouseJobs[1].location, '');
+eq('Greenhouse missing optional description becomes empty string', greenhouseJobs[1].description, '');
 
 const ashbyJobs = await ashby.fetch(
   { name: 'Deepgram', careers_url: 'https://jobs.ashbyhq.com/Deepgram' },
@@ -121,6 +124,8 @@ const ashbyJobs = await ashby.fetch(
             title: 'Solutions Engineer',
             jobUrl: 'https://jobs.ashbyhq.com/Deepgram/123',
             location: 'Remote, US',
+            descriptionHtml: '<p>Requires <strong>2+ years</strong> of customer-facing technical experience.</p>',
+            requirements: ['Build demos', 'Support implementation'],
             publishedAt: '2026-07-07T12:00:00Z',
             compensation: {
               interval: '1 YEAR',
@@ -143,11 +148,13 @@ eq('Ashby normalizes title', ashbyJobs[0].title, 'Solutions Engineer');
 eq('Ashby normalizes URL', ashbyJobs[0].url, 'https://jobs.ashbyhq.com/Deepgram/123');
 eq('Ashby normalizes company from entry', ashbyJobs[0].company, 'Deepgram');
 eq('Ashby normalizes location', ashbyJobs[0].location, 'Remote, US');
+eq('Ashby normalizes description text', ashbyJobs[0].description.trim(), 'Requires 2+ years of customer-facing technical experience.\n\nBuild demos\nSupport implementation');
 eq('Ashby parses salary min', ashbyJobs[0].salary.min, 90000);
 eq('Ashby parses salary max', ashbyJobs[0].salary.max, 120000);
 ok('Ashby parses postedAt', Number.isFinite(ashbyJobs[0].postedAt));
 eq('Ashby tolerates missing optional salary', ashbyJobs[1].salary, null);
 eq('Ashby tolerates missing optional postedAt', ashbyJobs[1].postedAt, undefined);
+eq('Ashby tolerates missing optional description', ashbyJobs[1].description, '');
 
 const leverJobs = await lever.fetch(
   { name: 'Ramp', careers_url: 'https://jobs.lever.co/ramp' },

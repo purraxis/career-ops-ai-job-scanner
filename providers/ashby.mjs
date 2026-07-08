@@ -118,6 +118,48 @@ function formatLocation(j) {
   return [...new Set(parts)].join(' · ');
 }
 
+function htmlToText(value) {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|ul|ol|h[1-6])>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function fieldText(value) {
+  if (typeof value === 'string') return htmlToText(value);
+  if (Array.isArray(value)) return value.map(fieldText).filter(Boolean).join('\n');
+  if (value && typeof value === 'object') {
+    return Object.values(value).map(fieldText).filter(Boolean).join('\n');
+  }
+  return '';
+}
+
+function descriptionText(job) {
+  return [
+    job.descriptionPlain,
+    job.descriptionHtml,
+    job.description,
+    job.requirements,
+    job.requirementsHtml,
+    job.requirementsPlain,
+    job.about,
+    job.responsibilities,
+  ].map(fieldText).filter(Boolean).join('\n\n');
+}
+
 /** @type {Provider} */
 export default {
   id: 'ashby',
@@ -145,6 +187,7 @@ export default {
           url: j.jobUrl || '',
           company: entry.name,
           location: formatLocation(j),
+          description: descriptionText(j),
           salary: parseCompensation(j),
           postedAt: toEpochMs(j.publishedAt),
         }));

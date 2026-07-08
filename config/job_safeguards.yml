@@ -83,5 +83,6 @@ sponsorship_reject_patterns:
   - "must be a us citizen"
   - "active security clearance"
   - "security clearance required"
+  - "clearance required"
   - "secret clearance"
   - "ts/sci"
