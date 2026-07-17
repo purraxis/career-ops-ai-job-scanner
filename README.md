@@ -106,6 +106,7 @@ Important scanner files:
 - `providers/adzuna.mjs`: Adzuna API provider.
 - `providers/jooble.mjs`: Jooble API provider.
 - `validate-portals.mjs`: validates portal configuration and reports provider detection for tracked company boards.
+- `docs/materials-generation.md`: default rules for generating tailored resumes and cover letters from private source files.
 - `portals.yml`: local job-source, role-tier, location, freshness, and provider configuration.
 - `config/job_safeguards.yml`: strict seniority, years-of-experience, sponsorship, and role-fit safeguards.
 - `data/pipeline.md`: verified job pipeline output.
