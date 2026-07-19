@@ -31,6 +31,17 @@ Tailoring process:
 4. Keep the resume one page and application-ready. Use clean ATS-friendly sections, no icons, no tables, no images, no exaggerated claims, and no dense walls of text.
 5. Apply a similarity guard. Before finalizing, compare the resume conceptually against other generated resumes in the same batch. If it is mostly identical, rewrite the summary, reorder competencies, rewrite bullets, or select different projects when appropriate.
 
+Project evidence rules:
+
+- Populate Selected Projects only from actual public GitHub repositories under [purraxis](https://github.com/purraxis).
+- Treat [purraxis/career-ops-ai-job-scanner](https://github.com/purraxis/career-ops-ai-job-scanner) as the flagship project and feature it prominently whenever a Selected Projects section is included, unless explicitly told otherwise.
+- Before writing or editing a resume, review the relevant repo README, file structure, package manifests or dependencies, and source layout.
+- Use only evidenced technologies, architecture, and functionality. Do not guess at libraries, tools, or implementation details.
+- Write project bullets around real functionality, the problem solved, and notable technical decisions.
+- Cross-check repo-evidenced technologies against the Skills section and add relevant ones only when they support the target role.
+- Do not add a technology or tool to Experience unless the repo substantiates it or Dinh has explicitly said it was used in that job.
+- Flag ambiguous dependencies or implementation details instead of silently treating them as claimable skills.
+
 Preferred emphasis when supported by the job description:
 
 - Discovery
