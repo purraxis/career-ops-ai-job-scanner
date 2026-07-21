@@ -824,10 +824,12 @@ export function evaluateRequirementsSafeguard(job, config = DEFAULT_REQUIREMENTS
       status = 'reject';
       reason = 'direct ATS role lacks strong title match and clear <=3 years requirement';
     } else {
-      status = 'manual_review';
       if (description.trim()) {
-        reason = 'direct ATS strong title but unclear year requirement';
+        status = 'pass';
+        reviewCategory = '';
+        reason = 'direct ATS strong title with no stated year requirement';
       } else {
+        status = 'manual_review';
         reviewCategory = 'missing_description_for_year_detection';
         reason = 'missing_description_for_year_detection';
       }

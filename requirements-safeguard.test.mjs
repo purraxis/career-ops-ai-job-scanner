@@ -116,12 +116,12 @@ eq(
 );
 
 eq(
-  'no entry signal and no <=3 years evidence is manual review',
+  'direct ATS strong title with no year requirement passes',
   safeguard({
     title: 'Solutions Engineer',
     description: 'Build demos, run discovery, partner with customers, and support implementation work.',
   }, { source: 'greenhouse-api', roleTierMatch: { tier: 'tier_1_priority', title: 'Solutions Engineer' } }).status,
-  'manual_review',
+  'pass',
 );
 
 eq('2+ years of experience is accepted', parseYearRequirement('2+ years of experience', { maxRequiredYears: 3 }).decision, 'acceptable');
@@ -181,12 +181,21 @@ eq(
 );
 
 eq(
-  'direct ATS job with strong title and unclear years can go to manual review',
+  'direct ATS job with strong title and no stated years can pass',
   safeguard({
     title: 'Solutions Engineer',
     description: 'Run discovery, demos, and implementation work with customers.',
   }, { source: 'ashby-api', roleTierMatch: { tier: 'tier_1_priority', title: 'Solutions Engineer' } }).status,
-  'manual_review',
+  'pass',
+);
+
+eq(
+  'direct ATS job with strong title and no stated years explains pass reason',
+  safeguard({
+    title: 'Solutions Engineer',
+    description: 'Run discovery, demos, and implementation work with customers.',
+  }, { source: 'ashby-api', roleTierMatch: { tier: 'tier_1_priority', title: 'Solutions Engineer' } }).reason,
+  'direct ATS strong title with no stated year requirement',
 );
 
 eq(

@@ -60,6 +60,12 @@ Preferred emphasis when supported by the job description:
 
 Output only the finished tailored resume content, ready to render as PDF or DOCX.
 
+Default delivery rule:
+
+- When Dinh asks for a tailored resume or cover letter for an application, generate application-ready PDF files by default unless he explicitly asks for text only.
+- Before delivery, render the PDF to an image preview and visually check that the resume is one page, uses the page well, has no clipped text, and follows the private resume rules.
+- Text-only output is acceptable only for short application answers, quick review, or when Dinh explicitly asks for text.
+
 ## Cover Letter Prompt
 
 When generating a cover letter for a role, use these inputs:
@@ -85,3 +91,8 @@ Dinh Pham
 ```
 
 Do not include HTML tags such as `<br>`.
+
+Default delivery rule:
+
+- When Dinh asks for a cover letter for a role, generate a PDF by default unless he explicitly asks for text only.
+- Keep the final signature plain text with only the name.
