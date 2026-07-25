@@ -128,6 +128,7 @@ The generated JSON includes:
 - `pipeline`: jobs already in the apply pipeline.
 - `needs_review`: jobs requiring manual review before application.
 - `rejected`: jobs rejected by freshness, seniority, sponsorship, verification, or other safeguards.
+- `queues`: action-aware working queues for active review, handled review, active pipeline, applied jobs, and apply-today jobs.
 - `scan_history`: provider scan history for auditability.
 - `latest_scan_summary`: current scan totals and provider/filter breakdowns.
 - `company_coverage`: tracked-company coverage by provider and recent scan activity.
@@ -138,6 +139,14 @@ The generated JSON includes:
 The dashboard itself is token-free. Resume generation, cover letter generation, application answers, and AI job evaluation should remain explicit token-cost actions triggered by user intent.
 
 The dashboard is desktop-first. Its main workflow is a sidebar-driven review cockpit with compact job rows, a detail panel, action logging, scan summaries, and company coverage views.
+
+The action log is append-only. `scripts/build-ui-state.mjs` reads `data/job-actions.tsv` and derives:
+
+- active review jobs that still need a human decision,
+- handled review jobs that were moved or rejected,
+- active pipeline jobs that are not yet marked applied,
+- applied jobs,
+- apply-today jobs moved into the pipeline during the current day.
 
 The supporting local adapter files are generated and ignored by git:
 

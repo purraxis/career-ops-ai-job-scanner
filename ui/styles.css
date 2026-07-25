@@ -356,6 +356,12 @@ p {
   color: var(--danger);
 }
 
+.detail-actions .secondary {
+  border-color: var(--border-strong);
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
 .token-action {
   color: var(--muted);
 }

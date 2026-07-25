@@ -1,10 +1,15 @@
 let state = null;
-let currentView = 'pipeline';
+let currentView = 'active_review';
 let selectedId = '';
 let latestActionByJobId = new Map();
 
 const els = {
   lastScan: document.querySelector('#lastScan'),
+  activeReviewCount: document.querySelector('#activeReviewCount'),
+  applyTodayCount: document.querySelector('#applyTodayCount'),
+  activePipelineCount: document.querySelector('#activePipelineCount'),
+  appliedCount: document.querySelector('#appliedCount'),
+  handledReviewCount: document.querySelector('#handledReviewCount'),
   pipelineCount: document.querySelector('#pipelineCount'),
   needsReviewCount: document.querySelector('#needsReviewCount'),
   rejectedCount: document.querySelector('#rejectedCount'),
@@ -29,7 +34,58 @@ const els = {
   template: document.querySelector('#jobRowTemplate'),
 };
 
-const jobViews = new Set(['pipeline', 'needs_review', 'rejected']);
+const viewConfig = {
+  active_review: {
+    title: 'Active Review',
+    kicker: 'Needs Review',
+    source: () => state?.queues?.active_review || [],
+    actionContext: 'review',
+  },
+  apply_today: {
+    title: 'Apply Today',
+    kicker: 'Daily Pipeline',
+    source: () => state?.queues?.apply_today || [],
+    actionContext: 'pipeline',
+  },
+  active_pipeline: {
+    title: 'Active Pipeline',
+    kicker: 'Pipeline',
+    source: () => state?.queues?.active_pipeline || [],
+    actionContext: 'pipeline',
+  },
+  applied: {
+    title: 'Applied',
+    kicker: 'Application History',
+    source: () => state?.queues?.applied || [],
+    actionContext: 'applied',
+  },
+  handled_review: {
+    title: 'Handled Review',
+    kicker: 'Review History',
+    source: () => state?.queues?.handled_review || [],
+    actionContext: 'handled_review',
+  },
+  rejected: {
+    title: 'Scanner Rejected',
+    kicker: 'Audit Log',
+    source: () => state?.rejected || [],
+    actionContext: 'rejected',
+  },
+  all_pipeline: {
+    title: 'All Pipeline',
+    kicker: 'Pipeline Audit',
+    source: () => state?.pipeline || [],
+    actionContext: 'pipeline',
+  },
+  all_review: {
+    title: 'All Review',
+    kicker: 'Review Audit',
+    source: () => state?.needs_review || [],
+    actionContext: 'review',
+  },
+};
+
+const jobViews = new Set(Object.keys(viewConfig));
 const handledActions = new Set(['moved_to_pipeline', 'rejected_by_user', 'applied']);
 
 async function requestJson(url, options = {}) {
@@ -92,9 +148,7 @@ async function moveToPipeline(item, button) {
 }
 
 function itemsForView(view = currentView) {
-  if (view === 'needs_review') return state?.needs_review || [];
-  if (view === 'rejected') return state?.rejected || [];
-  return state?.pipeline || [];
+  return viewConfig[view]?.source() || [];
 }
 
 function actionLabel(action) {
@@ -137,7 +191,8 @@ function primaryReason(item) {
 }
 
 function isHandled(item) {
-  const action = latestActionByJobId.get(item.id);
+  if (item.is_handled) return true;
+  const action = item.latest_action || latestActionByJobId.get(item.id);
   return action ? handledActions.has(action.action) : false;
 }
 
@@ -162,7 +217,8 @@ function filteredItems() {
   const provider = els.providerFilter.value;
   const reason = els.reasonFilter.value;
   return itemsForView()
-    .filter(item => els.showHandled.checked || !isHandled(item))
+    .filter(item => els.showHandled.checked || currentView !== 'all_review' || !isHandled(item))
+    .filter(item => els.showHandled.checked || currentView !== 'all_pipeline' || (!item.is_applied && !item.is_rejected_by_user))
     .filter(item => !query || searchableText(item).includes(query))
     .filter(item => !provider || providerValue(item) === provider)
     .filter(item => !reason || primaryReason(item) === reason)
@@ -197,6 +253,11 @@ function renderReasonOptions() {
 
 function renderStats() {
   els.lastScan.textContent = state?.last_scan_at || '-';
+  els.activeReviewCount.textContent = state?.stats?.active_review_count ?? state?.queues?.active_review?.length ?? 0;
+  els.applyTodayCount.textContent = state?.stats?.apply_today_count ?? state?.queues?.apply_today?.length ?? 0;
+  els.activePipelineCount.textContent = state?.stats?.active_pipeline_count ?? state?.queues?.active_pipeline?.length ?? 0;
+  els.appliedCount.textContent = state?.stats?.applied_count ?? state?.queues?.applied?.length ?? 0;
+  els.handledReviewCount.textContent = state?.stats?.handled_review_count ?? state?.queues?.handled_review?.length ?? 0;
   els.pipelineCount.textContent = state?.stats?.pipeline_count ?? state?.pipeline?.length ?? 0;
   els.needsReviewCount.textContent = state?.stats?.needs_review_count ?? state?.needs_review?.length ?? 0;
   els.rejectedCount.textContent = state?.stats?.rejected_count ?? state?.rejected?.length ?? 0;
@@ -224,15 +285,12 @@ function setVisiblePanel() {
 
 function renderJobRows() {
   const items = filteredItems();
+  const config = viewConfig[currentView];
   const selectedStillVisible = items.some(item => item.id === selectedId);
   if (!selectedStillVisible) selectedId = items[0]?.id || '';
 
-  els.viewKicker.textContent = 'Review Queue';
-  els.viewTitle.textContent = {
-    pipeline: 'Pipeline',
-    needs_review: 'Needs Review',
-    rejected: 'Rejected',
-  }[currentView];
+  els.viewKicker.textContent = config?.kicker || 'Review Queue';
+  els.viewTitle.textContent = config?.title || 'Jobs';
   els.viewMeta.textContent = `${items.length} visible jobs`;
   els.jobRows.innerHTML = '';
 
@@ -248,7 +306,7 @@ function renderJobRows() {
   for (const item of items) {
     const node = els.template.content.cloneNode(true);
     const row = node.querySelector('.job-row');
-    const latestAction = latestActionByJobId.get(item.id);
+    const latestAction = item.latest_action || latestActionByJobId.get(item.id);
     row.dataset.id = item.id;
     row.classList.toggle('selected', item.id === selectedId);
     row.classList.toggle('handled', Boolean(latestAction));
@@ -301,7 +359,8 @@ function renderDetail(item) {
     return;
   }
 
-  const latestAction = latestActionByJobId.get(item.id);
+  const latestAction = item.latest_action || latestActionByJobId.get(item.id);
+  const actionContext = viewConfig[currentView]?.actionContext || '';
   const title = document.createElement('h3');
   title.textContent = item.title || item.label || 'Untitled job';
   const company = document.createElement('p');
@@ -328,17 +387,20 @@ function renderDetail(item) {
   open.textContent = 'Open Job';
   actions.append(open);
 
-  if (currentView === 'needs_review') {
+  if (actionContext === 'review' && !item.is_moved_to_pipeline && !item.is_rejected_by_user) {
     actions.append(
       makeButton('Move to Pipeline', 'primary', button => moveToPipeline(item, button)),
       makeButton('Reject', 'danger', button => logJobAction('rejected_by_user', item, button, 'Rejected from dashboard review')),
     );
   }
-  if (currentView === 'pipeline') {
+  if (actionContext === 'pipeline' && !item.is_applied && !item.is_rejected_by_user) {
     actions.append(
       makeButton('Mark Applied', 'primary', button => logJobAction('applied', item, button, 'Marked applied from dashboard')),
       makeButton('Reject', 'danger', button => logJobAction('rejected_by_user', item, button, 'Rejected from dashboard pipeline')),
     );
+  }
+  if (actionContext === 'applied' || actionContext === 'handled_review') {
+    actions.append(makeButton('Log Follow-Up', 'secondary', button => logJobAction('saved_for_later', item, button, 'Follow-up noted from dashboard')));
   }
   actions.append(
     makeButton('Resume', 'token-action', () => {}, true),

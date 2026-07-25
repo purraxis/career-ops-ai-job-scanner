@@ -206,6 +206,45 @@ function parseJobActions(text) {
   }));
 }
 
+function latestActionsByJobId(actions) {
+  const byId = new Map();
+  for (const action of actions) {
+    const ids = [
+      action.job_id,
+      stableJobId(action.url, action.company, action.title),
+    ].filter(Boolean);
+    for (const id of ids) {
+      const previous = byId.get(id);
+      if (!previous || action.timestamp > previous.timestamp) byId.set(id, action);
+    }
+  }
+  return byId;
+}
+
+function actionForItem(item, actionsById) {
+  return actionsById.get(item.id)
+    || actionsById.get(stableJobId(item.url || item.final_url || '', item.company, item.title))
+    || null;
+}
+
+function applyActionState(items, actionsById) {
+  return items.map(item => {
+    const latestAction = actionForItem(item, actionsById);
+    const action = latestAction?.action || '';
+    const isApplied = action === 'applied';
+    const isRejectedByUser = action === 'rejected_by_user';
+    const isMovedToPipeline = action === 'moved_to_pipeline' || action === 'move_to_pipeline_skipped';
+    return {
+      ...item,
+      latest_action: latestAction,
+      is_handled: Boolean(latestAction && ['applied', 'rejected_by_user', 'moved_to_pipeline', 'move_to_pipeline_skipped'].includes(action)),
+      is_applied: isApplied,
+      is_rejected_by_user: isRejectedByUser,
+      is_moved_to_pipeline: isMovedToPipeline,
+    };
+  });
+}
+
 function readJson(filePath, fallback = null) {
   const text = readText(filePath);
   if (!text) return fallback;
@@ -244,6 +283,24 @@ for (const item of pipeline) {
   item.first_seen = history.first_seen || '';
   item.scan_status = history.status || '';
 }
+const actionsById = latestActionsByJobId(jobActions);
+const actionedPipeline = applyActionState(pipeline, actionsById);
+const actionedNeedsReview = applyActionState(needsReview, actionsById);
+const actionedRejected = applyActionState(rejected, actionsById);
+const today = new Date().toISOString().slice(0, 10);
+const queues = {
+  active_review: actionedNeedsReview.filter(item => !item.is_moved_to_pipeline && !item.is_rejected_by_user),
+  handled_review: actionedNeedsReview.filter(item => item.is_moved_to_pipeline || item.is_rejected_by_user),
+  active_pipeline: actionedPipeline.filter(item => !item.is_applied && !item.is_rejected_by_user),
+  applied: actionedPipeline.filter(item => item.is_applied),
+  apply_today: actionedPipeline.filter(item => {
+    const action = item.latest_action;
+    return !item.is_applied
+      && !item.is_rejected_by_user
+      && action?.action === 'moved_to_pipeline'
+      && action.timestamp?.slice(0, 10) === today;
+  }),
+};
 
 const state = {
   schema_version: 1,
@@ -260,6 +317,11 @@ const state = {
     rejected_count: rejected.length,
     scan_history_count: scanHistory.length,
     job_actions_count: jobActions.length,
+    active_review_count: queues.active_review.length,
+    handled_review_count: queues.handled_review.length,
+    active_pipeline_count: queues.active_pipeline.length,
+    applied_count: queues.applied.length,
+    apply_today_count: queues.apply_today.length,
     pipeline_by_company: countBy(pipeline, 'company'),
     needs_review_by_provider: countBy(needsReview, 'provider'),
     rejected_by_reason: countBy(rejected, 'rejection_reason'),
@@ -268,9 +330,10 @@ const state = {
   company_coverage: companyCoverage,
   career_context: careerContext,
   job_actions: jobActions,
-  pipeline,
-  needs_review: needsReview,
-  rejected,
+  queues,
+  pipeline: actionedPipeline,
+  needs_review: actionedNeedsReview,
+  rejected: actionedRejected,
   scan_history: scanHistory,
 };
 
@@ -282,3 +345,6 @@ console.log(`Pipeline: ${pipeline.length}`);
 console.log(`Needs review: ${needsReview.length}`);
 console.log(`Rejected: ${rejected.length}`);
 console.log(`Scan history rows: ${scanHistory.length}`);
+console.log(`Active review: ${queues.active_review.length}`);
+console.log(`Active pipeline: ${queues.active_pipeline.length}`);
+console.log(`Apply today: ${queues.apply_today.length}`);
