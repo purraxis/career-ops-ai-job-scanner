@@ -201,6 +201,12 @@ button:disabled {
   color: var(--danger);
 }
 
+.action-status {
+  color: var(--accent-dark);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .job-actions {
   align-content: start;
   justify-content: end;
@@ -210,8 +216,22 @@ button:disabled {
   display: none;
 }
 
-.needs-review .job-actions .move {
+.needs-review .job-actions .move:not([hidden]) {
   display: inline-block;
+}
+
+.job-actions [hidden] {
+  display: none;
+}
+
+.job-actions .reject {
+  border-color: #fecdd3;
+  color: var(--danger);
+}
+
+.job-actions .applied {
+  border-color: #99f6e4;
+  color: var(--accent-dark);
 }
 
 .future {

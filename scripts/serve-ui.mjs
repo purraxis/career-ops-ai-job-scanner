@@ -76,6 +76,17 @@ function runNodeScript(script) {
   });
 }
 
+async function rebuildAppState() {
+  for (const script of [
+    'scripts/build-scan-summary.mjs',
+    'scripts/build-company-coverage.mjs',
+    'scripts/build-career-context.mjs',
+    'scripts/build-ui-state.mjs',
+  ]) {
+    await runNodeScript(script);
+  }
+}
+
 function ensureUiState() {
   if (!existsSync(UI_STATE_PATH)) {
     throw new Error('data/ui-state.json is missing. Run npm run build:ui-state first.');
@@ -163,8 +174,8 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && req.url === '/api/build-ui-state') {
-      const result = await runNodeScript('scripts/build-ui-state.mjs');
-      send(res, 200, { ok: true, ...result });
+      await rebuildAppState();
+      send(res, 200, { ok: true });
       return;
     }
 
@@ -172,7 +183,7 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req);
       const result = moveToPipeline(body.job);
       appendJobAction(result.moved ? 'moved_to_pipeline' : 'move_to_pipeline_skipped', body.job, result.reason || '');
-      await runNodeScript('scripts/build-ui-state.mjs');
+      await rebuildAppState();
       send(res, 200, { ok: true, ...result });
       return;
     }
@@ -184,7 +195,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       appendJobAction(body.action, body.job || {}, body.note || '');
-      await runNodeScript('scripts/build-ui-state.mjs');
+      await rebuildAppState();
       send(res, 200, { ok: true });
       return;
     }

@@ -1,4 +1,5 @@
 let state = null;
+let latestActionByJobId = new Map();
 
 const els = {
   lastScan: document.querySelector('#lastScan'),
@@ -36,11 +37,49 @@ async function rebuildState() {
   await loadState();
 }
 
+async function logJobAction(action, item, button, note = '') {
+  button.disabled = true;
+  const previousText = button.textContent;
+  button.textContent = 'Saving...';
+  try {
+    await requestJson('/api/job-action', {
+      method: 'POST',
+      body: JSON.stringify({ action, job: item, note }),
+    });
+    await loadState();
+  } finally {
+    button.textContent = previousText;
+    button.disabled = false;
+  }
+}
+
 function currentItems() {
   const view = els.viewFilter.value;
   if (view === 'needs_review') return state.needs_review || [];
   if (view === 'rejected') return state.rejected || [];
   return state.pipeline || [];
+}
+
+function actionLabel(action) {
+  return {
+    moved_to_pipeline: 'Moved to pipeline',
+    move_to_pipeline_skipped: 'Already in pipeline',
+    rejected_by_user: 'Rejected by user',
+    applied: 'Marked applied',
+    saved_for_later: 'Saved for later',
+  }[action] || action;
+}
+
+function refreshActionIndex() {
+  latestActionByJobId = new Map();
+  for (const action of state?.job_actions || []) {
+    const id = action.job_id || '';
+    if (!id) continue;
+    const previous = latestActionByJobId.get(id);
+    if (!previous || action.timestamp > previous.timestamp) {
+      latestActionByJobId.set(id, action);
+    }
+  }
 }
 
 function itemDate(item) {
@@ -120,9 +159,14 @@ function renderList() {
     const title = node.querySelector('h3');
     const company = node.querySelector('.company');
     const meta = node.querySelector('.meta');
+    const actionStatus = node.querySelector('.action-status');
     const reason = node.querySelector('.reason');
     const open = node.querySelector('a');
     const move = node.querySelector('.move');
+    const reject = node.querySelector('.reject');
+    const applied = node.querySelector('.applied');
+    const tokenActions = node.querySelectorAll('.token-action');
+    const latestAction = latestActionByJobId.get(item.id);
 
     title.textContent = item.title || item.label || item.url || 'Untitled job';
     company.textContent = item.company || 'Unknown company';
@@ -133,6 +177,9 @@ function renderList() {
       item.compensation,
     ].filter(Boolean).join(' | ');
     reason.textContent = item.rejection_reason || item.verification_reason || item.why_not_accepted || '';
+    actionStatus.textContent = latestAction
+      ? `${actionLabel(latestAction.action)}${latestAction.timestamp ? ` | ${latestAction.timestamp}` : ''}`
+      : '';
     open.href = item.final_url || item.url || '#';
 
     move.addEventListener('click', async () => {
@@ -145,12 +192,39 @@ function renderList() {
       await loadState();
     });
 
+    reject.addEventListener('click', () => {
+      logJobAction('rejected_by_user', item, reject, 'Rejected from dashboard review');
+    });
+
+    applied.addEventListener('click', () => {
+      logJobAction('applied', item, applied, 'Marked applied from dashboard');
+    });
+
+    if (view === 'pipeline') {
+      applied.hidden = false;
+      move.hidden = true;
+      reject.hidden = false;
+    } else if (view === 'needs_review') {
+      applied.hidden = true;
+      move.hidden = false;
+      reject.hidden = false;
+    } else {
+      applied.hidden = true;
+      move.hidden = true;
+      reject.hidden = true;
+    }
+
+    for (const button of tokenActions) {
+      button.title = 'Explicit token-cost action. Wire this to the generation workflow later.';
+    }
+
     card.dataset.id = item.id;
     els.jobList.append(node);
   }
 }
 
 function render() {
+  refreshActionIndex();
   renderStats();
   renderProviderOptions();
   renderList();
