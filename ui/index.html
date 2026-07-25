@@ -7,86 +7,104 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">Career Ops</p>
-        <h1>Job Scanner Dashboard</h1>
-      </div>
-      <div class="actions">
-        <button id="refreshState" type="button">Refresh Data</button>
-        <button id="rebuildState" type="button">Rebuild JSON</button>
-      </div>
-    </header>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Main navigation">
+        <div class="brand">
+          <p class="eyebrow">Career Ops</p>
+          <h1>Job Scanner</h1>
+        </div>
 
-    <main>
-      <section class="stats" aria-label="Scanner summary">
-        <div>
-          <span id="lastScan">-</span>
-          <label>Last Scan</label>
-        </div>
-        <div>
-          <span id="pipelineCount">0</span>
-          <label>Pipeline</label>
-        </div>
-        <div>
-          <span id="needsReviewCount">0</span>
-          <label>Needs Review</label>
-        </div>
-        <div>
-          <span id="rejectedCount">0</span>
-          <label>Rejected</label>
-        </div>
-      </section>
+        <nav class="nav">
+          <button class="nav-item active" type="button" data-view="pipeline">
+            <span>Pipeline</span>
+            <strong id="pipelineCount">0</strong>
+          </button>
+          <button class="nav-item" type="button" data-view="needs_review">
+            <span>Needs Review</span>
+            <strong id="needsReviewCount">0</strong>
+          </button>
+          <button class="nav-item" type="button" data-view="rejected">
+            <span>Rejected</span>
+            <strong id="rejectedCount">0</strong>
+          </button>
+          <button class="nav-item" type="button" data-view="scan_summary">
+            <span>Scan Summary</span>
+          </button>
+          <button class="nav-item" type="button" data-view="company_coverage">
+            <span>Company Coverage</span>
+          </button>
+        </nav>
 
-      <section class="controls" aria-label="Job filters">
-        <input id="search" type="search" placeholder="Search company, role, location, reason">
-        <select id="providerFilter">
-          <option value="">All providers</option>
-        </select>
-        <select id="viewFilter">
-          <option value="pipeline">Pipeline</option>
-          <option value="needs_review">Needs review</option>
-          <option value="rejected">Rejected</option>
-        </select>
-      </section>
+        <div class="sidebar-meta">
+          <label>Last scan</label>
+          <strong id="lastScan">-</strong>
+          <label>Action log</label>
+          <strong id="actionCount">0 actions</strong>
+        </div>
+      </aside>
 
-      <section class="board">
-        <div class="board-header">
-          <h2 id="viewTitle">Pipeline</h2>
-          <p id="viewMeta">0 jobs</p>
-        </div>
-        <div id="jobList" class="job-list"></div>
-      </section>
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="viewKicker">Review Queue</p>
+            <h2 id="viewTitle">Pipeline</h2>
+            <p id="viewMeta">0 jobs</p>
+          </div>
+          <div class="actions">
+            <button id="refreshState" type="button">Refresh</button>
+            <button id="rebuildState" type="button">Rebuild State</button>
+          </div>
+        </header>
 
-      <section class="future">
-        <h2>Explicit Token-Cost Actions</h2>
-        <p>Resume, cover letter, application answer, and AI evaluation actions should be wired here later. The dashboard itself only reads local files and does not call an LLM.</p>
-        <div class="future-actions">
-          <button type="button" disabled>Generate Resume</button>
-          <button type="button" disabled>Generate Cover Letter</button>
-          <button type="button" disabled>Evaluate Job With AI</button>
-        </div>
-      </section>
-    </main>
+        <section class="controls" aria-label="Job filters">
+          <input id="search" type="search" placeholder="Search company, role, location, reason">
+          <select id="providerFilter">
+            <option value="">All providers</option>
+          </select>
+          <select id="reasonFilter">
+            <option value="">All reasons</option>
+          </select>
+          <label class="check-control">
+            <input id="showHandled" type="checkbox">
+            <span>Show handled</span>
+          </label>
+        </section>
 
-    <template id="jobCardTemplate">
-      <article class="job-card">
-        <div class="job-main">
-          <h3></h3>
-          <p class="company"></p>
-          <p class="meta"></p>
-          <p class="action-status"></p>
-          <p class="reason"></p>
-        </div>
-        <div class="job-actions">
-          <a target="_blank" rel="noreferrer">Open</a>
-          <button class="move" type="button">Move to Pipeline</button>
-          <button class="reject" type="button">Reject</button>
-          <button class="applied" type="button">Mark Applied</button>
-          <button class="token-action" type="button" disabled>Resume</button>
-          <button class="token-action" type="button" disabled>Letter</button>
-        </div>
-      </article>
+        <section id="jobWorkspace" class="review-layout">
+          <section class="job-table-panel" aria-label="Jobs">
+            <div class="job-table-head">
+              <span>Role</span>
+              <span>Provider</span>
+              <span>Date</span>
+            </div>
+            <div id="jobRows" class="job-rows"></div>
+          </section>
+
+          <aside id="detailPanel" class="detail-panel" aria-label="Selected job detail">
+            <p class="empty">Select a job to inspect details.</p>
+          </aside>
+        </section>
+
+        <section id="summaryView" class="data-view" hidden>
+          <div id="summaryContent" class="data-grid"></div>
+        </section>
+
+        <section id="coverageView" class="data-view" hidden>
+          <div id="coverageContent" class="data-grid"></div>
+        </section>
+      </main>
+    </div>
+
+    <template id="jobRowTemplate">
+      <button class="job-row" type="button">
+        <span class="row-main">
+          <strong class="row-title"></strong>
+          <span class="row-company"></span>
+          <span class="row-reason"></span>
+        </span>
+        <span class="row-provider"></span>
+        <span class="row-date"></span>
+      </button>
     </template>
 
     <script src="/app.js" type="module"></script>

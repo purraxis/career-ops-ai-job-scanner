@@ -116,12 +116,12 @@ Important scanner files:
 - `data/rejected-jobs.tsv`: rejected-job audit output.
 - `data/needs-review.md`: optional manual-review output when enabled.
 - `scripts/build-ui-state.mjs`: converts scanner outputs into a single local JSON contract for UI work.
-- `scripts/serve-ui.mjs`: serves the local dashboard and token-free API actions.
-- `ui/`: dependency-free local dashboard for reviewing pipeline, needs-review, and rejected jobs.
+- `scripts/serve-ui.mjs`: serves the local desktop dashboard and token-free API actions.
+- `ui/`: dependency-free desktop dashboard for reviewing pipeline, needs-review, rejected jobs, scan summaries, and company coverage.
 
 ### Local UI Data Contract
 
-The UI should read `data/ui-state.json` instead of parsing Markdown and TSV files directly. The adapter keeps the dashboard independent from scanner output formatting and makes room for future features such as drag-and-drop review, company coverage analysis, and career-context matching.
+The UI should read `data/ui-state.json` instead of parsing Markdown and TSV files directly. The adapter keeps the dashboard independent from scanner output formatting and makes room for review actions, company coverage analysis, scan summaries, and career-context matching.
 
 The generated JSON includes:
 
@@ -136,6 +136,8 @@ The generated JSON includes:
 - `stats`: summary counts for dashboard views.
 
 The dashboard itself is token-free. Resume generation, cover letter generation, application answers, and AI job evaluation should remain explicit token-cost actions triggered by user intent.
+
+The dashboard is desktop-first. Its main workflow is a sidebar-driven review cockpit with compact job rows, a detail panel, action logging, scan summaries, and company coverage views.
 
 The supporting local adapter files are generated and ignored by git:
 
@@ -309,7 +311,7 @@ Build the local UI state file:
 npm run build:app-state
 ```
 
-Start the local dashboard:
+Start the local desktop dashboard:
 
 ```bash
 npm run ui
@@ -321,13 +323,13 @@ Then open:
 http://127.0.0.1:4173
 ```
 
-To open the dashboard from a phone or another device on the same Wi-Fi network, start the LAN server:
+Optional same-network access is available for testing from another device:
 
 ```bash
 npm run ui:lan
 ```
 
-Then use the same-network URL printed in the terminal. `127.0.0.1` only works on the computer running the server; on a phone, it points back to the phone itself.
+The primary supported workflow is local desktop use through `npm run ui`.
 
 ## Privacy And Commit Hygiene
 
