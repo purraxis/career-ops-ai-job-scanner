@@ -149,13 +149,23 @@ The action log is append-only. `scripts/build-ui-state.mjs` reads `data/job-acti
 - applied jobs,
 - apply-today jobs moved into the pipeline during the current day.
 
-Generation requests are also append-only. Clicking `Request Resume` or `Request Letter` writes a local queue item to `data/generation-requests.tsv`; it does not generate documents or call an LLM. The explicit command boundary is:
+Generation requests are also append-only. Clicking `Request Resume` or `Request Letter` writes a local queue item to `data/generation-requests.tsv`; it does not generate documents or call an LLM.
+
+Job descriptions can be cached locally before generation:
+
+```bash
+npm run cache:jd -- --url "https://example.com/job" --company "Example" --title "Example Role"
+```
+
+The dashboard exposes the same token-free cache action through `Cache JD`. Cached descriptions are stored in ignored Markdown files under `data/job-descriptions/`.
+
+The explicit command boundary for later token-cost generation is:
 
 ```bash
 npm run generate:queued-materials
 ```
 
-That command currently reports pending requests and is the intended integration point for a later token-cost generator. Job descriptions and generated materials should stay in ignored local paths such as `data/job-descriptions/` and `output/`.
+That command currently reports pending requests and checks whether private career sources, resume rules, and cached job descriptions are present. It is the intended integration point for a later token-cost generator. Job descriptions and generated materials should stay in ignored local paths such as `data/job-descriptions/` and `output/`.
 
 The supporting local adapter files are generated and ignored by git:
 

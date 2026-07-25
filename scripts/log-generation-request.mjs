@@ -38,7 +38,7 @@ function stableJobId(url, company, title) {
 function ensureHeader(filePath) {
   mkdirSync(path.dirname(filePath), { recursive: true });
   if (!existsSync(filePath) || !readFileSync(filePath, 'utf8').trim()) {
-    appendFileSync(filePath, 'timestamp\ttype\tjob_id\tcompany\ttitle\turl\tstatus\toutput_path\n', 'utf8');
+    appendFileSync(filePath, 'timestamp\ttype\tjob_id\tcompany\ttitle\turl\tstatus\tjd_cache_path\toutput_path\n', 'utf8');
   }
 }
 
@@ -59,6 +59,7 @@ const row = [
   title,
   url,
   sanitize(args.status || 'pending'),
+  sanitize(args.jdCachePath || ''),
   sanitize(args.outputPath || ''),
 ];
 

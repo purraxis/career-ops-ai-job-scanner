@@ -63,9 +63,9 @@ function readBody(req) {
   });
 }
 
-function runNodeScript(script) {
+function runNodeScript(script, args = []) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [script], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [script, ...args], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
@@ -123,6 +123,19 @@ function stableJobId(url, company, title) {
   }
 }
 
+function safeFileId(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 180) || 'job';
+}
+
+function jobDescriptionPath(job = {}) {
+  const id = job.id || stableJobId(job.url || job.final_url || '', job.company, job.title);
+  return join('data/job-descriptions', `${safeFileId(id)}.md`);
+}
+
 function appendJobAction(action, job = {}, note = '') {
   mkdirSync(join(ROOT, 'data'), { recursive: true });
   if (!existsSync(JOB_ACTIONS_PATH) || !readFileSync(JOB_ACTIONS_PATH, 'utf8').trim()) {
@@ -147,7 +160,7 @@ function appendGenerationRequest(type, job = {}) {
   mkdirSync(join(ROOT, 'data'), { recursive: true });
   mkdirSync(join(ROOT, 'data/job-descriptions'), { recursive: true });
   if (!existsSync(GENERATION_REQUESTS_PATH) || !readFileSync(GENERATION_REQUESTS_PATH, 'utf8').trim()) {
-    appendFileSync(GENERATION_REQUESTS_PATH, 'timestamp\ttype\tjob_id\tcompany\ttitle\turl\tstatus\toutput_path\n', 'utf8');
+    appendFileSync(GENERATION_REQUESTS_PATH, 'timestamp\ttype\tjob_id\tcompany\ttitle\turl\tstatus\tjd_cache_path\toutput_path\n', 'utf8');
   }
   const row = [
     new Date().toISOString(),
@@ -157,6 +170,7 @@ function appendGenerationRequest(type, job = {}) {
     sanitizeTsv(job.title),
     sanitizeTsv(job.url || job.final_url || ''),
     'pending',
+    sanitizeTsv(job.jd_cache_path || jobDescriptionPath(job)),
     '',
   ];
   appendFileSync(GENERATION_REQUESTS_PATH, `${row.join('\t')}\n`, 'utf8');
@@ -228,6 +242,31 @@ const server = createServer(async (req, res) => {
       appendGenerationRequest(body.type, body.job || {});
       await rebuildAppState();
       send(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/cache-job-description') {
+      const body = await readBody(req);
+      const job = body.job || {};
+      const url = job.final_url || job.url || body.url || '';
+      if (!url) {
+        send(res, 400, { ok: false, error: 'url_required' });
+        return;
+      }
+      const result = await runNodeScript('scripts/cache-job-description.mjs', [
+        '--url', url,
+        '--job-id', job.id || stableJobId(url, job.company, job.title),
+        '--company', job.company || '',
+        '--title', job.title || '',
+      ]);
+      await rebuildAppState();
+      let parsed = null;
+      try {
+        parsed = JSON.parse(result.stdout);
+      } catch {
+        parsed = { stdout: result.stdout, stderr: result.stderr };
+      }
+      send(res, 200, { ok: true, ...parsed });
       return;
     }
 

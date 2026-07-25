@@ -166,6 +166,22 @@ async function requestGeneration(type, item, button) {
   }
 }
 
+async function cacheJobDescription(item, button) {
+  button.disabled = true;
+  const previousText = button.textContent;
+  button.textContent = 'Caching...';
+  try {
+    await requestJson('/api/cache-job-description', {
+      method: 'POST',
+      body: JSON.stringify({ job: item }),
+    });
+    await loadState();
+  } finally {
+    button.textContent = previousText;
+    button.disabled = false;
+  }
+}
+
 function itemsForView(view = currentView) {
   return viewConfig[view]?.source() || [];
 }
@@ -228,6 +244,7 @@ function searchableText(item) {
     item.why_not_rejected,
     item.review_category,
     item.url,
+    item.jd_cached ? 'jd cached' : 'jd missing',
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
@@ -397,6 +414,7 @@ function renderDetail(item) {
   appendDetailRow(details, 'Classification', item.classification);
   appendDetailRow(details, 'Reason', primaryReason(item));
   appendDetailRow(details, 'Final URL', item.final_url || item.url);
+  appendDetailRow(details, 'JD Cache', item.jd_cached ? `Cached | ${item.jd_cache_path}` : `Missing | ${item.jd_cache_path || ''}`);
   appendDetailRow(details, 'Latest Action', latestAction ? `${actionLabel(latestAction.action)} | ${latestAction.timestamp}` : '');
   appendDetailRow(details, 'Generation Requests', generationRequestSummary(item));
 
@@ -408,6 +426,7 @@ function renderDetail(item) {
   open.rel = 'noreferrer';
   open.textContent = 'Open Job';
   actions.append(open);
+  actions.append(makeButton(item.jd_cached ? 'Re-cache JD' : 'Cache JD', 'secondary', button => cacheJobDescription(item, button)));
 
   if (actionContext === 'review' && !item.is_moved_to_pipeline && !item.is_rejected_by_user) {
     actions.append(
@@ -546,7 +565,12 @@ function renderGenerationQueue() {
     const title = document.createElement('h3');
     title.textContent = `${request.type || 'material'} | ${request.company || 'Unknown company'}`;
     const meta = document.createElement('p');
-    meta.textContent = [request.title, request.status, request.timestamp].filter(Boolean).join(' | ');
+    meta.textContent = [
+      request.title,
+      request.status,
+      request.jd_cached ? 'JD cached' : 'JD missing',
+      request.timestamp,
+    ].filter(Boolean).join(' | ');
     main.append(title, meta);
 
     const actions = document.createElement('div');

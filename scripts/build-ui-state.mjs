@@ -15,6 +15,7 @@ const paths = {
   scanHistory: args.scanHistory || 'data/scan-history.tsv',
   jobActions: args.jobActions || 'data/job-actions.tsv',
   generationRequests: args.generationRequests || 'data/generation-requests.tsv',
+  jobDescriptionDir: args.jobDescriptionDir || 'data/job-descriptions',
   latestScanSummary: args.latestScanSummary || 'data/latest-scan-summary.json',
   companyCoverage: args.companyCoverage || 'data/company-coverage.json',
   careerContext: args.careerContext || 'data/career-context.json',
@@ -216,8 +217,33 @@ function parseGenerationRequests(text) {
     title: row.title || '',
     url: row.url || '',
     status: row.status || '',
+    jd_cache_path: row.jd_cache_path || '',
     output_path: row.output_path || '',
   }));
+}
+
+function safeFileId(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 180) || 'job';
+}
+
+function jobDescriptionPath(item) {
+  const id = item.id || stableJobId(item.url || item.final_url || '', item.company, item.title);
+  return path.join(paths.jobDescriptionDir, `${safeFileId(id)}.md`);
+}
+
+function enrichJobDescriptionState(items) {
+  return items.map(item => {
+    const jdCachePath = jobDescriptionPath(item);
+    return {
+      ...item,
+      jd_cache_path: jdCachePath,
+      jd_cached: existsSync(jdCachePath),
+    };
+  });
 }
 
 function latestActionsByJobId(actions) {
@@ -299,9 +325,22 @@ for (const item of pipeline) {
   item.scan_status = history.status || '';
 }
 const actionsById = latestActionsByJobId(jobActions);
-const actionedPipeline = applyActionState(pipeline, actionsById);
-const actionedNeedsReview = applyActionState(needsReview, actionsById);
-const actionedRejected = applyActionState(rejected, actionsById);
+const actionedPipeline = enrichJobDescriptionState(applyActionState(pipeline, actionsById));
+const actionedNeedsReview = enrichJobDescriptionState(applyActionState(needsReview, actionsById));
+const actionedRejected = enrichJobDescriptionState(applyActionState(rejected, actionsById));
+const enrichedGenerationRequests = generationRequests.map(request => {
+  const jdCachePath = request.jd_cache_path || jobDescriptionPath({
+    id: request.job_id,
+    url: request.url,
+    company: request.company,
+    title: request.title,
+  });
+  return {
+    ...request,
+    jd_cache_path: jdCachePath,
+    jd_cached: existsSync(jdCachePath),
+  };
+});
 const today = new Date().toISOString().slice(0, 10);
 const queues = {
   active_review: actionedNeedsReview.filter(item => !item.is_moved_to_pipeline && !item.is_rejected_by_user),
@@ -332,8 +371,9 @@ const state = {
     rejected_count: rejected.length,
     scan_history_count: scanHistory.length,
     job_actions_count: jobActions.length,
-    generation_requests_count: generationRequests.length,
-    pending_generation_requests_count: generationRequests.filter(request => request.status === 'pending').length,
+    generation_requests_count: enrichedGenerationRequests.length,
+    pending_generation_requests_count: enrichedGenerationRequests.filter(request => request.status === 'pending').length,
+    pending_generation_missing_jd_count: enrichedGenerationRequests.filter(request => request.status === 'pending' && !request.jd_cached).length,
     active_review_count: queues.active_review.length,
     handled_review_count: queues.handled_review.length,
     active_pipeline_count: queues.active_pipeline.length,
@@ -347,7 +387,7 @@ const state = {
   company_coverage: companyCoverage,
   career_context: careerContext,
   job_actions: jobActions,
-  generation_requests: generationRequests,
+  generation_requests: enrichedGenerationRequests,
   queues,
   pipeline: actionedPipeline,
   needs_review: actionedNeedsReview,
