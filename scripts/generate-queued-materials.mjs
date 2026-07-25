@@ -2,7 +2,10 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
+import { pathToFileURL } from 'url';
+import { spawnSync } from 'child_process';
 import yaml from 'js-yaml';
+import { chromium } from 'playwright';
 
 const args = parseArgs(process.argv.slice(2));
 const queuePath = args.queue || process.env.CAREER_OPS_GENERATION_QUEUE || 'data/generation-requests.tsv';
@@ -148,13 +151,13 @@ function buildResumeDraft(request, profile, context, match, jdText) {
   const contact = candidateContact(profile);
   const terms = extractJdTerms(jdText);
   const lane = inferLane(request, terms);
-  const bullets = topBullets(match, 9);
+  const bullets = topBullets(match, 8);
   const sections = topSections(match, 4);
   const skills = [
     ...(context.sections?.skills?.[0]?.bullets || []),
     terms.join(' | '),
   ].filter(Boolean).join(' | ');
-  const education = context.sections?.education?.[0]?.text || '';
+  const education = truncate(context.sections?.education?.[0]?.text || '', 420);
 
   return [
     `# ${contact.name}`,
@@ -163,7 +166,7 @@ function buildResumeDraft(request, profile, context, match, jdText) {
     '',
     '## Professional Summary',
     '',
-    `${contact.name} is a computer science candidate focused on ${lane}, with experience translating business needs into AI automation, enterprise workflow, dashboard, enablement, and stakeholder support outcomes. This draft was generated from local career context and the cached job description for ${request.company || 'the company'} - ${request.title || 'the role'}.`,
+    `${contact.name} is a computer science candidate focused on ${lane}, with experience translating business needs into AI automation, enterprise workflows, dashboards, enablement, and stakeholder support outcomes.`,
     '',
     '## Core Competencies',
     '',
@@ -180,14 +183,6 @@ function buildResumeDraft(request, profile, context, match, jdText) {
     '## Education And Technical Foundation',
     '',
     education || 'See private career source for education and technical foundation.',
-    '',
-    '## Generation Notes',
-    '',
-    `- Request: ${request.type}`,
-    `- Job: ${request.company || 'Unknown'} - ${request.title || 'Unknown'}`,
-    `- Cached JD: ${request.jd_cache_path || defaultJdPath(request)}`,
-    `- Context Match: ${request.context_match_path || defaultContextMatchPath(request)}`,
-    '- Review required before submission. This local draft is not a final PDF.',
     '',
   ].join('\n');
 }
@@ -212,39 +207,84 @@ function buildLetterDraft(request, profile, match, jdText) {
     '',
     contact.name,
     '',
-    '---',
-    '',
-    `Generated from cached JD and local career context. Review required before submission.`,
-    '',
   ].join('\n');
 }
 
-function markdownToHtml(markdown, title) {
-  const escaped = markdown
+function escapeHtml(value) {
+  return String(value || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  const body = escaped
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>')
-    .replace(/\n{2,}/g, '</p><p>')
-    .replace(/\n/g, '<br>');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function markdownToHtml(markdown, title) {
+  const lines = markdown.split(/\r?\n/);
+  const html = [];
+  let inList = false;
+  let afterH1 = false;
+
+  function closeList() {
+    if (inList) {
+      html.push('</ul>');
+      inList = false;
+    }
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      closeList();
+      continue;
+    }
+    if (line.startsWith('# ')) {
+      closeList();
+      html.push(`<h1>${escapeHtml(line.slice(2))}</h1>`);
+      afterH1 = true;
+      continue;
+    }
+    if (line.startsWith('## ')) {
+      closeList();
+      html.push(`<h2>${escapeHtml(line.slice(3))}</h2>`);
+      afterH1 = false;
+      continue;
+    }
+    if (line.startsWith('- ')) {
+      if (!inList) {
+        html.push('<ul>');
+        inList = true;
+      }
+      html.push(`<li>${escapeHtml(line.slice(2))}</li>`);
+      afterH1 = false;
+      continue;
+    }
+    closeList();
+    html.push(`<p${afterH1 ? ' class="contact"' : ''}>${escapeHtml(line)}</p>`);
+    afterH1 = false;
+  }
+  closeList();
+
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>${title}</title>
+  <title>${escapeHtml(title)}</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 760px; margin: 32px auto; color: #111827; line-height: 1.35; }
-    h1 { text-align: center; margin-bottom: 4px; }
-    h2 { border-bottom: 1px solid #9ca3af; font-size: 16px; margin-top: 18px; }
-    li { margin-bottom: 5px; }
-    p { margin: 8px 0; }
+    @page { size: Letter; margin: 0.42in 0.52in; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; color: #111827; line-height: 1.18; font-size: 10.4px; margin: 0; }
+    h1 { text-align: center; margin: 0 0 2px; font-size: 21px; line-height: 1.05; }
+    h2 { border-bottom: 1px solid #9ca3af; font-size: 11.6px; margin: 7px 0 3px; padding-bottom: 1px; text-transform: uppercase; }
+    ul { margin: 2px 0 4px 15px; padding: 0; }
+    li { margin: 0 0 1.8px; padding-left: 1px; }
+    p { margin: 2px 0 4px; }
+    .contact { text-align: center; margin: 0 0 7px; }
+    @media print {
+      a { color: inherit; text-decoration: none; }
+    }
   </style>
 </head>
-<body><p>${body}</p></body>
+<body>${html.join('\n')}</body>
 </html>
 `;
 }
@@ -256,9 +296,64 @@ function writeMaterial(request, markdown) {
   mkdirSync(dir, { recursive: true });
   const mdPath = path.join(dir, `${base}.md`);
   const htmlPath = path.join(dir, `${base}.html`);
+  const pdfPath = path.join(dir, `${base}.pdf`);
+  const validationPath = path.join(dir, `${base}.validation.json`);
   writeFileSync(mdPath, markdown, 'utf8');
   writeFileSync(htmlPath, markdownToHtml(markdown, `${request.company} ${request.title}`), 'utf8');
-  return { mdPath, htmlPath };
+  return { mdPath, htmlPath, pdfPath, validationPath };
+}
+
+async function renderPdf(htmlPath, pdfPath) {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 816, height: 1056 } });
+    await page.goto(pathToFileURL(path.resolve(htmlPath)).href, { waitUntil: 'load' });
+    await page.pdf({
+      path: pdfPath,
+      format: 'Letter',
+      printBackground: true,
+      preferCSSPageSize: true,
+    });
+  } finally {
+    await browser.close();
+  }
+}
+
+function pdfInfo(pdfPath) {
+  const result = spawnSync('pdfinfo', [pdfPath], { encoding: 'utf8' });
+  if (result.status !== 0) {
+    return {
+      available: false,
+      error: (result.stderr || result.stdout || 'pdfinfo unavailable').trim(),
+      pages: null,
+    };
+  }
+  const pages = Number((result.stdout.match(/^Pages:\s+(\d+)/m) || [])[1] || 0) || null;
+  return { available: true, pages };
+}
+
+function validatePdf(request, pdfPath) {
+  const info = pdfInfo(pdfPath);
+  const issues = [];
+  const size = existsSync(pdfPath) ? readFileSync(pdfPath).length : 0;
+  if (!existsSync(pdfPath)) issues.push('pdf_missing');
+  if (size < 1000) issues.push('pdf_too_small');
+  if (info.available && request.type === 'resume' && info.pages !== 1) {
+    issues.push(`resume_expected_one_page_got_${info.pages}`);
+  }
+  if (info.available && request.type === 'letter' && info.pages > 2) {
+    issues.push(`letter_expected_two_pages_or_less_got_${info.pages}`);
+  }
+  if (!info.available) issues.push('pdfinfo_unavailable_visual_review_required');
+  return {
+    validated_at: new Date().toISOString(),
+    pdf_path: pdfPath,
+    type: request.type,
+    pages: info.pages,
+    bytes: size,
+    issues,
+    passed: issues.length === 0,
+  };
 }
 
 function markBlocked(request, reason) {
@@ -315,12 +410,27 @@ for (const request of pending) {
     ? buildLetterDraft(request, profile, match, jdText)
     : buildResumeDraft(request, profile, context, match, jdText);
   const output = writeMaterial(request, markdown);
-  request.status = 'generated';
-  request.output_path = output.mdPath;
-  generated += 1;
-  console.log(`Generated ${request.type}: ${request.company} - ${request.title}`);
-  console.log(`- ${output.mdPath}`);
-  console.log(`- ${output.htmlPath}`);
+  try {
+    await renderPdf(output.htmlPath, output.pdfPath);
+    const validation = validatePdf(request, output.pdfPath);
+    writeFileSync(output.validationPath, JSON.stringify(validation, null, 2) + '\n', 'utf8');
+    request.status = validation.passed ? 'generated_pdf' : 'generated_needs_layout_review';
+    request.output_path = output.pdfPath;
+    generated += 1;
+    console.log(`Generated ${request.type}: ${request.company} - ${request.title}`);
+    console.log(`- ${output.mdPath}`);
+    console.log(`- ${output.htmlPath}`);
+    console.log(`- ${output.pdfPath}`);
+    console.log(`- ${output.validationPath}`);
+    if (validation.issues.length) console.log(`  issues: ${validation.issues.join(', ')}`);
+  } catch (error) {
+    request.status = 'blocked_pdf_render_failed';
+    request.output_path = output.htmlPath;
+    blocked += 1;
+    console.log(`PDF render failed for ${request.type}: ${request.company} - ${request.title}`);
+    console.log(`- ${output.htmlPath}`);
+    console.log(`  ${error.message}`);
+  }
 }
 
 writeQueue(requests);
