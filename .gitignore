@@ -4,6 +4,11 @@ data/applications.md
 data/applications.db
 data/follow-ups.md
 data/pipeline.md
+data/ui-state.json
+data/job-actions.tsv
+data/latest-scan-summary.json
+data/company-coverage.json
+data/career-context.json
 data/scan-history.tsv
 data/pdf-index.tsv
 data/parser-output/**/*.json

@@ -1,0 +1,40 @@
+# One-Page Candidate Material Template
+
+`{{NAME}}`
+
+`{{CONTACT_LINE}}`
+
+## Professional Summary
+
+`{{2_LINE_ROLE_MATCHED_SUMMARY}}`
+
+## Core Competencies
+
+`{{ROLE_MATCHED_COMPETENCIES}}`
+
+## Experience
+
+### `{{EMPLOYER}}` - `{{ROLE_TITLE}}` | `{{LOCATION}}` | `{{DATES}}`
+
+- `{{ROLE_SPECIFIC_BULLET_WITH_METRIC}}`
+- `{{ROLE_SPECIFIC_BULLET_WITH_TECHNICAL_DETAIL}}`
+- `{{ROLE_SPECIFIC_BULLET_WITH_CUSTOMER_OR_STAKEHOLDER_IMPACT}}`
+
+### `{{EMPLOYER}}` - `{{ROLE_TITLE}}` | `{{LOCATION}}` | `{{DATES}}`
+
+- `{{ROLE_SPECIFIC_BULLET_WITH_METRIC}}`
+- `{{ROLE_SPECIFIC_BULLET_WITH_TECHNICAL_DETAIL}}`
+
+## Selected Projects
+
+### `{{PROJECT_NAME}}`
+
+- `{{VERIFIED_PROJECT_BULLET_FROM_PUBLIC_REPO_OR_PRIVATE_SOURCE}}`
+
+## Leadership
+
+- `{{LEADERSHIP_BULLET_IF_RELEVANT}}`
+
+## Education And Technical Foundation
+
+`{{EDUCATION_AND_RELEVANT_COURSEWORK}}`

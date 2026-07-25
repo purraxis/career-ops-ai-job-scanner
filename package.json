@@ -6,6 +6,14 @@
   "type": "module",
   "scripts": {
     "scan": "node scan.mjs",
+    "build:scan-summary": "node scripts/build-scan-summary.mjs",
+    "build:company-coverage": "node scripts/build-company-coverage.mjs",
+    "build:career-context": "node scripts/build-career-context.mjs",
+    "build:ui-state": "node scripts/build-ui-state.mjs",
+    "build:app-state": "npm run build:scan-summary && npm run build:company-coverage && npm run build:career-context && npm run build:ui-state",
+    "log:job-action": "node scripts/log-job-action.mjs",
+    "ui": "node scripts/serve-ui.mjs",
+    "ui:lan": "CAREER_OPS_UI_HOST=0.0.0.0 node scripts/serve-ui.mjs",
     "validate:portals": "node validate-portals.mjs",
     "test": "node --check scan.mjs && node --check providers/jooble.mjs && node ats-provider.test.mjs && node requirements-safeguard.test.mjs && node jooble-provider.test.mjs && node live-verification.test.mjs && node verification-classification.test.mjs"
   },

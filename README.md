@@ -90,6 +90,9 @@ flowchart LR
   G --> H["Compensation/Location Filter"]
   H --> I["Live Verification"]
   I --> J["Pipeline Output: data/pipeline.md"]
+  J --> L["UI Adapter: data/ui-state.json"]
+  K --> L
+  L --> M["Local Dashboard"]
   E --> K["Rejected / Needs Review Logs"]
   F --> K
   G --> K
@@ -112,6 +115,59 @@ Important scanner files:
 - `data/pipeline.md`: verified job pipeline output.
 - `data/rejected-jobs.tsv`: rejected-job audit output.
 - `data/needs-review.md`: optional manual-review output when enabled.
+- `scripts/build-ui-state.mjs`: converts scanner outputs into a single local JSON contract for UI work.
+- `scripts/serve-ui.mjs`: serves the local dashboard and token-free API actions.
+- `ui/`: dependency-free local dashboard for reviewing pipeline, needs-review, and rejected jobs.
+
+### Local UI Data Contract
+
+The UI should read `data/ui-state.json` instead of parsing Markdown and TSV files directly. The adapter keeps the dashboard independent from scanner output formatting and makes room for future features such as drag-and-drop review, company coverage analysis, and career-context matching.
+
+The generated JSON includes:
+
+- `pipeline`: jobs already in the apply pipeline.
+- `needs_review`: jobs requiring manual review before application.
+- `rejected`: jobs rejected by freshness, seniority, sponsorship, verification, or other safeguards.
+- `scan_history`: provider scan history for auditability.
+- `latest_scan_summary`: current scan totals and provider/filter breakdowns.
+- `company_coverage`: tracked-company coverage by provider and recent scan activity.
+- `career_context`: private career-source sections prepared for future matching workflows.
+- `job_actions`: local UI decisions such as moving a reviewed job into the pipeline.
+- `stats`: summary counts for dashboard views.
+
+The dashboard itself is token-free. Resume generation, cover letter generation, application answers, and AI job evaluation should remain explicit token-cost actions triggered by user intent.
+
+The supporting local adapter files are generated and ignored by git:
+
+- `data/latest-scan-summary.json`
+- `data/company-coverage.json`
+- `data/career-context.json`
+- `data/job-actions.tsv`
+- `data/ui-state.json`
+
+Build the full local app state with:
+
+```bash
+npm run build:app-state
+```
+
+Or build each adapter separately:
+
+```bash
+npm run build:scan-summary
+npm run build:company-coverage
+npm run build:career-context
+npm run build:ui-state
+```
+
+The career-context adapter reads private files by default, so its generated output should stay local:
+
+```text
+private/cv.md
+private/config/profile.yml
+```
+
+The repository also includes public-safe document structure templates in `templates/material-kit/`. They are placeholders only; private facts are loaded from ignored local sources at generation time.
 
 ### Direct ATS Company Boards
 
@@ -246,6 +302,32 @@ Run a real scan:
 ```bash
 npm run scan
 ```
+
+Build the local UI state file:
+
+```bash
+npm run build:app-state
+```
+
+Start the local dashboard:
+
+```bash
+npm run ui
+```
+
+Then open:
+
+```text
+http://127.0.0.1:4173
+```
+
+To open the dashboard from a phone or another device on the same Wi-Fi network, start the LAN server:
+
+```bash
+npm run ui:lan
+```
+
+Then use the same-network URL printed in the terminal. `127.0.0.1` only works on the computer running the server; on a phone, it points back to the phone itself.
 
 ## Privacy And Commit Hygiene
 
