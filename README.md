@@ -117,6 +117,7 @@ Important scanner files:
 - `data/needs-review.md`: optional manual-review output when enabled.
 - `scripts/build-ui-state.mjs`: converts scanner outputs into a single local JSON contract for UI work.
 - `scripts/serve-ui.mjs`: serves the local desktop dashboard and token-free API actions.
+- `scripts/match-career-context.mjs`: ranks private career-context sections against a cached job description without using an LLM.
 - `ui/`: dependency-free desktop dashboard for reviewing pipeline, needs-review, rejected jobs, scan summaries, and company coverage.
 
 ### Local UI Data Contract
@@ -159,13 +160,21 @@ npm run cache:jd -- --url "https://example.com/job" --company "Example" --title 
 
 The dashboard exposes the same token-free cache action through `Cache JD`. Cached descriptions are stored in ignored Markdown files under `data/job-descriptions/`.
 
+After caching a JD, career evidence can be matched locally:
+
+```bash
+npm run match:career-context -- --job-id "job-id-from-ui-state"
+```
+
+The dashboard exposes the same token-free action through `Match Context`. Matching output is stored in ignored JSON files under `data/context-matches/` and ranks relevant private career sections/bullets for later generation.
+
 The explicit command boundary for later token-cost generation is:
 
 ```bash
 npm run generate:queued-materials
 ```
 
-That command currently reports pending requests and checks whether private career sources, resume rules, and cached job descriptions are present. It is the intended integration point for a later token-cost generator. Job descriptions and generated materials should stay in ignored local paths such as `data/job-descriptions/` and `output/`.
+That command currently reports pending requests and checks whether private career sources, resume rules, and cached job descriptions are present. It also warns when career-context matching is missing. It is the intended integration point for a later token-cost generator. Job descriptions, context matches, and generated materials should stay in ignored local paths such as `data/job-descriptions/`, `data/context-matches/`, and `output/`.
 
 The supporting local adapter files are generated and ignored by git:
 
@@ -174,6 +183,7 @@ The supporting local adapter files are generated and ignored by git:
 - `data/career-context.json`
 - `data/job-actions.tsv`
 - `data/generation-requests.tsv`
+- `data/context-matches/`
 - `data/ui-state.json`
 
 Build the full local app state with:

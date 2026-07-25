@@ -136,6 +136,11 @@ function jobDescriptionPath(job = {}) {
   return join('data/job-descriptions', `${safeFileId(id)}.md`);
 }
 
+function contextMatchPath(job = {}) {
+  const id = job.id || stableJobId(job.url || job.final_url || '', job.company, job.title);
+  return join('data/context-matches', `${safeFileId(id)}.json`);
+}
+
 function appendJobAction(action, job = {}, note = '') {
   mkdirSync(join(ROOT, 'data'), { recursive: true });
   if (!existsSync(JOB_ACTIONS_PATH) || !readFileSync(JOB_ACTIONS_PATH, 'utf8').trim()) {
@@ -258,6 +263,26 @@ const server = createServer(async (req, res) => {
         '--job-id', job.id || stableJobId(url, job.company, job.title),
         '--company', job.company || '',
         '--title', job.title || '',
+      ]);
+      await rebuildAppState();
+      let parsed = null;
+      try {
+        parsed = JSON.parse(result.stdout);
+      } catch {
+        parsed = { stdout: result.stdout, stderr: result.stderr };
+      }
+      send(res, 200, { ok: true, ...parsed });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/match-career-context') {
+      const body = await readBody(req);
+      const job = body.job || {};
+      const jobId = job.id || stableJobId(job.url || job.final_url || '', job.company, job.title);
+      const result = await runNodeScript('scripts/match-career-context.mjs', [
+        '--job-id', jobId,
+        '--jd', job.jd_cache_path || jobDescriptionPath(job),
+        '--output', job.context_match_path || contextMatchPath(job),
       ]);
       await rebuildAppState();
       let parsed = null;

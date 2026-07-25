@@ -13,6 +13,7 @@
     "build:app-state": "npm run build:scan-summary && npm run build:company-coverage && npm run build:career-context && npm run build:ui-state",
     "log:job-action": "node scripts/log-job-action.mjs",
     "cache:jd": "node scripts/cache-job-description.mjs",
+    "match:career-context": "node scripts/match-career-context.mjs",
     "request:generation": "node scripts/log-generation-request.mjs",
     "generate:queued-materials": "node scripts/generate-queued-materials.mjs",
     "ui": "node scripts/serve-ui.mjs",

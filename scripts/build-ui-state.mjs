@@ -16,6 +16,7 @@ const paths = {
   jobActions: args.jobActions || 'data/job-actions.tsv',
   generationRequests: args.generationRequests || 'data/generation-requests.tsv',
   jobDescriptionDir: args.jobDescriptionDir || 'data/job-descriptions',
+  contextMatchesDir: args.contextMatchesDir || 'data/context-matches',
   latestScanSummary: args.latestScanSummary || 'data/latest-scan-summary.json',
   companyCoverage: args.companyCoverage || 'data/company-coverage.json',
   careerContext: args.careerContext || 'data/career-context.json',
@@ -235,13 +236,21 @@ function jobDescriptionPath(item) {
   return path.join(paths.jobDescriptionDir, `${safeFileId(id)}.md`);
 }
 
+function contextMatchPath(item) {
+  const id = item.id || stableJobId(item.url || item.final_url || '', item.company, item.title);
+  return path.join(paths.contextMatchesDir, `${safeFileId(id)}.json`);
+}
+
 function enrichJobDescriptionState(items) {
   return items.map(item => {
     const jdCachePath = jobDescriptionPath(item);
+    const matchPath = contextMatchPath(item);
     return {
       ...item,
       jd_cache_path: jdCachePath,
       jd_cached: existsSync(jdCachePath),
+      context_match_path: matchPath,
+      context_matched: existsSync(matchPath),
     };
   });
 }
@@ -335,10 +344,18 @@ const enrichedGenerationRequests = generationRequests.map(request => {
     company: request.company,
     title: request.title,
   });
+  const matchPath = contextMatchPath({
+    id: request.job_id,
+    url: request.url,
+    company: request.company,
+    title: request.title,
+  });
   return {
     ...request,
     jd_cache_path: jdCachePath,
     jd_cached: existsSync(jdCachePath),
+    context_match_path: matchPath,
+    context_matched: existsSync(matchPath),
   };
 });
 const today = new Date().toISOString().slice(0, 10);
@@ -374,6 +391,7 @@ const state = {
     generation_requests_count: enrichedGenerationRequests.length,
     pending_generation_requests_count: enrichedGenerationRequests.filter(request => request.status === 'pending').length,
     pending_generation_missing_jd_count: enrichedGenerationRequests.filter(request => request.status === 'pending' && !request.jd_cached).length,
+    pending_generation_missing_context_match_count: enrichedGenerationRequests.filter(request => request.status === 'pending' && !request.context_matched).length,
     active_review_count: queues.active_review.length,
     handled_review_count: queues.handled_review.length,
     active_pipeline_count: queues.active_pipeline.length,

@@ -11,6 +11,7 @@ data/latest-scan-summary.json
 data/company-coverage.json
 data/career-context.json
 data/job-descriptions/
+data/context-matches/
 data/scan-history.tsv
 data/pdf-index.tsv
 data/parser-output/**/*.json

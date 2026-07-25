@@ -32,6 +32,10 @@ function defaultJdPath(request) {
   return path.join('data/job-descriptions', `${safeFileId(request.job_id)}.md`);
 }
 
+function defaultContextPath(request) {
+  return path.join('data/context-matches', `${safeFileId(request.job_id)}.json`);
+}
+
 const requests = existsSync(queuePath) ? parseTsv(readFileSync(queuePath, 'utf8')) : [];
 const pending = requests.filter(request => request.status === 'pending');
 const missingPrivateSources = requiredPrivateSources.filter(filePath => !existsSync(filePath));
@@ -52,9 +56,13 @@ if (!pending.length) {
 console.log('Readiness check only. No token-cost generation is wired yet.');
 for (const request of pending.slice(0, 20)) {
   const jdPath = request.jd_cache_path || defaultJdPath(request);
+  const contextPath = request.context_match_path || defaultContextPath(request);
   const blockers = [];
   if (!existsSync(jdPath)) blockers.push(`missing JD cache (${jdPath})`);
   if (missingPrivateSources.length) blockers.push('missing private sources');
+  const warnings = [];
+  if (!existsSync(contextPath)) warnings.push(`missing context match (${contextPath})`);
   const status = blockers.length ? `blocked: ${blockers.join('; ')}` : 'ready';
-  console.log(`- ${request.type}: ${request.company} - ${request.title} | ${status}`);
+  const suffix = warnings.length ? ` | warning: ${warnings.join('; ')}` : '';
+  console.log(`- ${request.type}: ${request.company} - ${request.title} | ${status}${suffix}`);
 }
