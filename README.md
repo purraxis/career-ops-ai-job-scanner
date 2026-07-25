@@ -134,6 +134,7 @@ The generated JSON includes:
 - `company_coverage`: tracked-company coverage by provider and recent scan activity.
 - `career_context`: private career-source sections prepared for future matching workflows.
 - `job_actions`: local UI decisions such as moving a reviewed job into the pipeline.
+- `generation_requests`: token-gated document requests waiting for an explicit generation command.
 - `stats`: summary counts for dashboard views.
 
 The dashboard itself is token-free. Resume generation, cover letter generation, application answers, and AI job evaluation should remain explicit token-cost actions triggered by user intent.
@@ -148,12 +149,21 @@ The action log is append-only. `scripts/build-ui-state.mjs` reads `data/job-acti
 - applied jobs,
 - apply-today jobs moved into the pipeline during the current day.
 
+Generation requests are also append-only. Clicking `Request Resume` or `Request Letter` writes a local queue item to `data/generation-requests.tsv`; it does not generate documents or call an LLM. The explicit command boundary is:
+
+```bash
+npm run generate:queued-materials
+```
+
+That command currently reports pending requests and is the intended integration point for a later token-cost generator. Job descriptions and generated materials should stay in ignored local paths such as `data/job-descriptions/` and `output/`.
+
 The supporting local adapter files are generated and ignored by git:
 
 - `data/latest-scan-summary.json`
 - `data/company-coverage.json`
 - `data/career-context.json`
 - `data/job-actions.tsv`
+- `data/generation-requests.tsv`
 - `data/ui-state.json`
 
 Build the full local app state with:

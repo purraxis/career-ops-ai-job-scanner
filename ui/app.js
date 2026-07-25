@@ -9,6 +9,7 @@ const els = {
   applyTodayCount: document.querySelector('#applyTodayCount'),
   activePipelineCount: document.querySelector('#activePipelineCount'),
   appliedCount: document.querySelector('#appliedCount'),
+  generationCount: document.querySelector('#generationCount'),
   handledReviewCount: document.querySelector('#handledReviewCount'),
   pipelineCount: document.querySelector('#pipelineCount'),
   needsReviewCount: document.querySelector('#needsReviewCount'),
@@ -24,8 +25,10 @@ const els = {
   jobWorkspace: document.querySelector('#jobWorkspace'),
   summaryView: document.querySelector('#summaryView'),
   coverageView: document.querySelector('#coverageView'),
+  generationView: document.querySelector('#generationView'),
   summaryContent: document.querySelector('#summaryContent'),
   coverageContent: document.querySelector('#coverageContent'),
+  generationContent: document.querySelector('#generationContent'),
   jobRows: document.querySelector('#jobRows'),
   detailPanel: document.querySelector('#detailPanel'),
   refreshState: document.querySelector('#refreshState'),
@@ -147,6 +150,22 @@ async function moveToPipeline(item, button) {
   }
 }
 
+async function requestGeneration(type, item, button) {
+  button.disabled = true;
+  const previousText = button.textContent;
+  button.textContent = 'Queued...';
+  try {
+    await requestJson('/api/generation-request', {
+      method: 'POST',
+      body: JSON.stringify({ type, job: item }),
+    });
+    await loadState();
+  } finally {
+    button.textContent = previousText;
+    button.disabled = false;
+  }
+}
+
 function itemsForView(view = currentView) {
   return viewConfig[view]?.source() || [];
 }
@@ -257,6 +276,7 @@ function renderStats() {
   els.applyTodayCount.textContent = state?.stats?.apply_today_count ?? state?.queues?.apply_today?.length ?? 0;
   els.activePipelineCount.textContent = state?.stats?.active_pipeline_count ?? state?.queues?.active_pipeline?.length ?? 0;
   els.appliedCount.textContent = state?.stats?.applied_count ?? state?.queues?.applied?.length ?? 0;
+  els.generationCount.textContent = state?.stats?.pending_generation_requests_count ?? 0;
   els.handledReviewCount.textContent = state?.stats?.handled_review_count ?? state?.queues?.handled_review?.length ?? 0;
   els.pipelineCount.textContent = state?.stats?.pipeline_count ?? state?.pipeline?.length ?? 0;
   els.needsReviewCount.textContent = state?.stats?.needs_review_count ?? state?.needs_review?.length ?? 0;
@@ -277,6 +297,7 @@ function setVisiblePanel() {
   els.jobWorkspace.hidden = !isJobView;
   els.summaryView.hidden = currentView !== 'scan_summary';
   els.coverageView.hidden = currentView !== 'company_coverage';
+  els.generationView.hidden = currentView !== 'generation_queue';
   els.search.disabled = !isJobView;
   els.providerFilter.disabled = !isJobView;
   els.reasonFilter.disabled = !isJobView;
@@ -377,6 +398,7 @@ function renderDetail(item) {
   appendDetailRow(details, 'Reason', primaryReason(item));
   appendDetailRow(details, 'Final URL', item.final_url || item.url);
   appendDetailRow(details, 'Latest Action', latestAction ? `${actionLabel(latestAction.action)} | ${latestAction.timestamp}` : '');
+  appendDetailRow(details, 'Generation Requests', generationRequestSummary(item));
 
   const actions = document.createElement('div');
   actions.className = 'detail-actions';
@@ -403,15 +425,27 @@ function renderDetail(item) {
     actions.append(makeButton('Log Follow-Up', 'secondary', button => logJobAction('saved_for_later', item, button, 'Follow-up noted from dashboard')));
   }
   actions.append(
-    makeButton('Resume', 'token-action', () => {}, true),
-    makeButton('Letter', 'token-action', () => {}, true),
+    makeButton('Request Resume', 'token-action', button => requestGeneration('resume', item, button)),
+    makeButton('Request Letter', 'token-action', button => requestGeneration('letter', item, button)),
   );
 
   const tokenNote = document.createElement('p');
   tokenNote.className = 'detail-note';
-  tokenNote.textContent = 'Resume and letter buttons are disabled until wired to an explicit token-cost workflow.';
+  tokenNote.textContent = 'Request buttons only add items to the local queue. Actual document generation stays a separate explicit token-cost command.';
 
   els.detailPanel.append(title, company, details, actions, tokenNote);
+}
+
+function generationRequestSummary(item) {
+  const requests = generationRequestsForItem(item);
+  if (!requests.length) return '';
+  return requests
+    .map(request => `${request.type}: ${request.status || 'pending'}`)
+    .join(', ');
+}
+
+function generationRequestsForItem(item) {
+  return (state?.generation_requests || []).filter(request => request.job_id === item.id);
 }
 
 function addMetric(parent, label, value) {
@@ -489,6 +523,52 @@ function renderCoverage() {
   addBreakdown(els.coverageContent, 'Enabled Boards With No Scan History', stale);
 }
 
+function renderGenerationQueue() {
+  const requests = [...(state?.generation_requests || [])]
+    .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+  els.viewKicker.textContent = 'Explicit Token Queue';
+  els.viewTitle.textContent = 'Generation Queue';
+  els.viewMeta.textContent = `${requests.length} material requests`;
+  els.generationContent.innerHTML = '';
+
+  if (!requests.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = 'No generation requests yet.';
+    els.generationContent.append(empty);
+    return;
+  }
+
+  for (const request of requests) {
+    const row = document.createElement('article');
+    row.className = 'request-row';
+    const main = document.createElement('div');
+    const title = document.createElement('h3');
+    title.textContent = `${request.type || 'material'} | ${request.company || 'Unknown company'}`;
+    const meta = document.createElement('p');
+    meta.textContent = [request.title, request.status, request.timestamp].filter(Boolean).join(' | ');
+    main.append(title, meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'request-actions';
+    if (request.url) {
+      const open = document.createElement('a');
+      open.href = request.url;
+      open.target = '_blank';
+      open.rel = 'noreferrer';
+      open.textContent = 'Open Job';
+      actions.append(open);
+    }
+    if (request.output_path) {
+      const output = document.createElement('span');
+      output.textContent = request.output_path;
+      actions.append(output);
+    }
+    row.append(main, actions);
+    els.generationContent.append(row);
+  }
+}
+
 function render() {
   refreshActionIndex();
   renderStats();
@@ -503,6 +583,8 @@ function render() {
     renderSummary();
   } else if (currentView === 'company_coverage') {
     renderCoverage();
+  } else if (currentView === 'generation_queue') {
+    renderGenerationQueue();
   }
 }
 

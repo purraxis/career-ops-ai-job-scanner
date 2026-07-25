@@ -31,6 +31,10 @@
             <span>Applied</span>
             <strong id="appliedCount">0</strong>
           </button>
+          <button class="nav-item" type="button" data-view="generation_queue">
+            <span>Generation Queue</span>
+            <strong id="generationCount">0</strong>
+          </button>
           <button class="nav-item" type="button" data-view="handled_review">
             <span>Handled Review</span>
             <strong id="handledReviewCount">0</strong>
@@ -111,6 +115,10 @@
 
         <section id="coverageView" class="data-view" hidden>
           <div id="coverageContent" class="data-grid"></div>
+        </section>
+
+        <section id="generationView" class="data-view" hidden>
+          <div id="generationContent" class="request-list"></div>
         </section>
       </main>
     </div>

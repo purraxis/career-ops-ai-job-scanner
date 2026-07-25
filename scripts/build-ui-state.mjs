@@ -14,6 +14,7 @@ const paths = {
   rejectedJobs: args.rejectedJobs || 'data/rejected-jobs.tsv',
   scanHistory: args.scanHistory || 'data/scan-history.tsv',
   jobActions: args.jobActions || 'data/job-actions.tsv',
+  generationRequests: args.generationRequests || 'data/generation-requests.tsv',
   latestScanSummary: args.latestScanSummary || 'data/latest-scan-summary.json',
   companyCoverage: args.companyCoverage || 'data/company-coverage.json',
   careerContext: args.careerContext || 'data/career-context.json',
@@ -206,6 +207,19 @@ function parseJobActions(text) {
   }));
 }
 
+function parseGenerationRequests(text) {
+  return parseTsv(text).map(row => ({
+    timestamp: row.timestamp || '',
+    type: row.type || '',
+    job_id: row.job_id || '',
+    company: row.company || '',
+    title: row.title || '',
+    url: row.url || '',
+    status: row.status || '',
+    output_path: row.output_path || '',
+  }));
+}
+
 function latestActionsByJobId(actions) {
   const byId = new Map();
   for (const action of actions) {
@@ -272,6 +286,7 @@ const needsReview = parseNeedsReview(readText(paths.needsReview));
 const rejected = parseRejectedJobs(readText(paths.rejectedJobs));
 const scanHistory = parseScanHistory(readText(paths.scanHistory));
 const jobActions = parseJobActions(readText(paths.jobActions));
+const generationRequests = parseGenerationRequests(readText(paths.generationRequests));
 const latestScanSummary = readJson(paths.latestScanSummary);
 const companyCoverage = readJson(paths.companyCoverage);
 const careerContext = readJson(paths.careerContext);
@@ -317,6 +332,8 @@ const state = {
     rejected_count: rejected.length,
     scan_history_count: scanHistory.length,
     job_actions_count: jobActions.length,
+    generation_requests_count: generationRequests.length,
+    pending_generation_requests_count: generationRequests.filter(request => request.status === 'pending').length,
     active_review_count: queues.active_review.length,
     handled_review_count: queues.handled_review.length,
     active_pipeline_count: queues.active_pipeline.length,
@@ -330,6 +347,7 @@ const state = {
   company_coverage: companyCoverage,
   career_context: careerContext,
   job_actions: jobActions,
+  generation_requests: generationRequests,
   queues,
   pipeline: actionedPipeline,
   needs_review: actionedNeedsReview,

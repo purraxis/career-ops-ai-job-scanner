@@ -6,9 +6,11 @@ data/follow-ups.md
 data/pipeline.md
 data/ui-state.json
 data/job-actions.tsv
+data/generation-requests.tsv
 data/latest-scan-summary.json
 data/company-coverage.json
 data/career-context.json
+data/job-descriptions/
 data/scan-history.tsv
 data/pdf-index.tsv
 data/parser-output/**/*.json

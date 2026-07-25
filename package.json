@@ -12,6 +12,8 @@
     "build:ui-state": "node scripts/build-ui-state.mjs",
     "build:app-state": "npm run build:scan-summary && npm run build:company-coverage && npm run build:career-context && npm run build:ui-state",
     "log:job-action": "node scripts/log-job-action.mjs",
+    "request:generation": "node scripts/log-generation-request.mjs",
+    "generate:queued-materials": "node scripts/generate-queued-materials.mjs",
     "ui": "node scripts/serve-ui.mjs",
     "ui:lan": "CAREER_OPS_UI_HOST=0.0.0.0 node scripts/serve-ui.mjs",
     "validate:portals": "node validate-portals.mjs",

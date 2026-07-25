@@ -13,6 +13,7 @@ const UI_DIR = join(ROOT, 'ui');
 const PIPELINE_PATH = join(ROOT, 'data/pipeline.md');
 const UI_STATE_PATH = join(ROOT, 'data/ui-state.json');
 const JOB_ACTIONS_PATH = join(ROOT, 'data/job-actions.tsv');
+const GENERATION_REQUESTS_PATH = join(ROOT, 'data/generation-requests.tsv');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -139,6 +140,28 @@ function appendJobAction(action, job = {}, note = '') {
   appendFileSync(JOB_ACTIONS_PATH, `${row.join('\t')}\n`, 'utf8');
 }
 
+function appendGenerationRequest(type, job = {}) {
+  if (!['resume', 'letter', 'application_answer'].includes(type)) {
+    throw new Error('invalid generation request type');
+  }
+  mkdirSync(join(ROOT, 'data'), { recursive: true });
+  mkdirSync(join(ROOT, 'data/job-descriptions'), { recursive: true });
+  if (!existsSync(GENERATION_REQUESTS_PATH) || !readFileSync(GENERATION_REQUESTS_PATH, 'utf8').trim()) {
+    appendFileSync(GENERATION_REQUESTS_PATH, 'timestamp\ttype\tjob_id\tcompany\ttitle\turl\tstatus\toutput_path\n', 'utf8');
+  }
+  const row = [
+    new Date().toISOString(),
+    sanitizeTsv(type),
+    sanitizeTsv(job.id || stableJobId(job.url || job.final_url || '', job.company, job.title)),
+    sanitizeTsv(job.company),
+    sanitizeTsv(job.title),
+    sanitizeTsv(job.url || job.final_url || ''),
+    'pending',
+    '',
+  ];
+  appendFileSync(GENERATION_REQUESTS_PATH, `${row.join('\t')}\n`, 'utf8');
+}
+
 function moveToPipeline(job) {
   if (!job?.url || !String(job.url).startsWith('http')) {
     throw new Error('job.url is required');
@@ -195,6 +218,14 @@ const server = createServer(async (req, res) => {
         return;
       }
       appendJobAction(body.action, body.job || {}, body.note || '');
+      await rebuildAppState();
+      send(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/generation-request') {
+      const body = await readBody(req);
+      appendGenerationRequest(body.type, body.job || {});
       await rebuildAppState();
       send(res, 200, { ok: true });
       return;
