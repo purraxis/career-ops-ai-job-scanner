@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 
+import 'dotenv/config';
+import Anthropic from '@anthropic-ai/sdk';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { spawnSync } from 'child_process';
+import OpenAI from 'openai';
 import yaml from 'js-yaml';
 import { chromium } from 'playwright';
 
@@ -14,53 +17,13 @@ const contextPath = args.context || 'data/career-context.json';
 const profilePath = process.env.CAREER_OPS_PROFILE || 'private/config/profile.yml';
 const cvPath = process.env.CAREER_OPS_CV || 'private/cv.md';
 const rulesPath = process.env.CAREER_OPS_RESUME_RULES || 'private/config/resume_rules.yml';
+const voiceDnaPath = process.env.CAREER_OPS_VOICE_DNA || 'private/support/voice-dna.md';
+const materialsGuidePath = args.materialsGuide || 'docs/materials-generation.md';
+const dryRun = Boolean(args.dryRun);
+const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o';
+const anthropicModel = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 const requiredPrivateSources = [cvPath, profilePath, rulesPath];
 const header = ['timestamp', 'type', 'job_id', 'company', 'title', 'url', 'status', 'jd_cache_path', 'output_path'];
-
-const laneProfiles = {
-  sales_engineering: {
-    label: 'sales engineering and technical GTM',
-    summary_focus: 'technical discovery, product demos, customer pain mapping, ROI framing, and stakeholder enablement',
-    competencies: ['Discovery', 'Product Demos', 'Technical Sales', 'Proof of Value', 'ROI Framing', 'Stakeholder Enablement'],
-    evidence_heading: 'Sales Engineering Evidence',
-    letter_focus: 'technical discovery, demos, and value-focused conversations with customer stakeholders',
-  },
-  solutions_engineering: {
-    label: 'solutions engineering and customer-facing technical implementation',
-    summary_focus: 'customer workflows, integrations, APIs, implementation planning, technical enablement, and business outcome translation',
-    competencies: ['Customer Workflows', 'API/Integration Thinking', 'Implementation Planning', 'Requirements Translation', 'Technical Enablement'],
-    evidence_heading: 'Solutions Engineering Evidence',
-    letter_focus: 'mapping customer problems into practical technical solutions and implementation paths',
-  },
-  ai_fde: {
-    label: 'AI workflows and forward-deployed solution work',
-    summary_focus: 'AI workflow design, automation, technical prototyping, ambiguous problem solving, and customer deployment support',
-    competencies: ['AI Workflows', 'Automation', 'Technical Prototyping', 'Agentic Systems', 'Model Evaluation', 'Customer Deployment'],
-    evidence_heading: 'AI/FDE Evidence',
-    letter_focus: 'building practical AI workflows and turning ambiguous customer requirements into working systems',
-  },
-  customer_success: {
-    label: 'technical customer success and adoption',
-    summary_focus: 'customer adoption, technical support workflows, enablement, troubleshooting, training, and measurable customer outcomes',
-    competencies: ['Customer Adoption', 'Technical Support', 'Enablement', 'Troubleshooting', 'Training', 'Customer Outcomes'],
-    evidence_heading: 'Technical Customer Success Evidence',
-    letter_focus: 'helping customers adopt technical products through clear enablement, support, and workflow improvement',
-  },
-  implementation: {
-    label: 'implementation and professional services',
-    summary_focus: 'requirements gathering, process mapping, onboarding, Salesforce, ServiceNow, configuration support, and deployment readiness',
-    competencies: ['Implementation', 'Requirements Gathering', 'Process Mapping', 'Onboarding', 'Salesforce', 'ServiceNow', 'Technical Documentation'],
-    evidence_heading: 'Implementation Evidence',
-    letter_focus: 'requirements gathering, workflow mapping, onboarding, and practical implementation support',
-  },
-  general_technical_gtm: {
-    label: 'customer-facing technical solutions',
-    summary_focus: 'technical problem solving, workflow improvement, enablement, implementation support, and stakeholder communication',
-    competencies: ['Technical Problem Solving', 'Workflow Improvement', 'Stakeholder Communication', 'Enablement', 'Implementation Support'],
-    evidence_heading: 'Role-Matched Evidence',
-    letter_focus: 'technical problem solving, workflow improvement, and clear customer-facing communication',
-  },
-};
 
 function parseArgs(argv) {
   const parsed = {};
@@ -116,175 +79,150 @@ function readYaml(filePath) {
   return existsSync(filePath) ? yaml.load(readFileSync(filePath, 'utf8')) || {} : {};
 }
 
+function readText(filePath) {
+  return existsSync(filePath) ? readFileSync(filePath, 'utf8') : '';
+}
+
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
-function cleanLine(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim();
-}
-
-function truncate(value, limit = 180) {
-  const text = cleanLine(value);
-  return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
-}
-
-function textFromMarkdownSection(markdown, heading) {
+function markdownSection(markdown, heading) {
   const pattern = new RegExp(`^## ${heading}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`, 'm');
   return markdown.match(pattern)?.[1]?.trim() || '';
 }
 
-function candidateContact(profile) {
-  const candidate = profile.candidate || profile.personal || {};
-  return {
-    name: candidate.full_name || candidate.name || 'Candidate',
-    line: [
-      candidate.location,
-      candidate.phone,
-      candidate.email,
-      candidate.linkedin,
-      candidate.github || candidate.portfolio_url,
-    ].filter(Boolean).join(' | '),
-  };
+function stripCodeFence(markdown) {
+  const text = String(markdown || '').trim();
+  const fenced = text.match(/^```(?:markdown|md|text)?\s*([\s\S]*?)\s*```$/i);
+  return (fenced ? fenced[1] : text).trim();
 }
 
-function extractJdTerms(jdText) {
-  const text = textFromMarkdownSection(jdText, 'Extracted Text') || jdText;
-  const matches = text
-    .toLowerCase()
-    .match(/\b[a-z][a-z0-9+#.]{2,}\b/g) || [];
-  const stop = new Set(['and', 'the', 'for', 'with', 'you', 'our', 'are', 'this', 'that', 'will', 'role', 'work', 'team', 'from', 'your']);
-  const counts = new Map();
-  for (const term of matches) {
-    if (!stop.has(term)) counts.set(term, (counts.get(term) || 0) + 1);
-  }
-  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 18).map(([term]) => term);
+function llmTextFromAnthropic(message) {
+  return (message.content || [])
+    .filter(block => block.type === 'text')
+    .map(block => block.text || '')
+    .join('\n')
+    .trim();
 }
 
-function dedupe(values) {
-  const seen = new Set();
-  const out = [];
-  for (const value of values) {
-    const cleaned = cleanLine(value);
-    const key = cleaned.toLowerCase();
-    if (!cleaned || seen.has(key)) continue;
-    seen.add(key);
-    out.push(cleaned);
-  }
-  return out;
+function providerForRequest(type) {
+  if (type === 'letter') return { provider: 'Anthropic Claude', model: anthropicModel };
+  return { provider: 'OpenAI Chat Completions', model: openaiModel };
 }
 
-function laneProfile(match, request, terms) {
-  const laneId = match.role_lane || inferLaneId(request, terms);
-  return laneProfiles[laneId] || laneProfiles.general_technical_gtm;
-}
+function buildMaterialPrompt({ type, request, context, match, jdText, sourceTexts, guideText }) {
+  const sectionName = type === 'letter' ? 'Cover Letter Prompt' : 'Tailored Resume Prompt';
+  const instructions = markdownSection(guideText, sectionName);
+  if (!instructions) throw new Error(`missing_materials_generation_section_${safeFileId(sectionName)}`);
+  const voice = type === 'letter'
+    ? [
+        '## Voice DNA',
+        sourceTexts.voiceDna || '(voice-dna source not found; use the cover letter rules and source facts only)',
+        '',
+      ].join('\n')
+    : '';
 
-function inferLaneId(request, terms) {
-  const haystack = `${request.title} ${terms.join(' ')}`.toLowerCase();
-  if (haystack.includes('implementation') || haystack.includes('onboarding')) return 'implementation';
-  if (haystack.includes('forward') || haystack.includes('deployed') || haystack.includes('agent') || haystack.includes(' ai ')) return 'ai_fde';
-  if (haystack.includes('customer success') || haystack.includes('technical success')) return 'customer_success';
-  if (haystack.includes('sales engineer') || haystack.includes('presales') || haystack.includes('pre-sales')) return 'sales_engineering';
-  if (haystack.includes('solutions') || haystack.includes('solution consultant') || haystack.includes('customer engineer')) return 'solutions_engineering';
-  return 'general_technical_gtm';
-}
-
-function topBullets(match, limit = 8) {
-  const bullets = [];
-  for (const section of match.sections || []) {
-    for (const item of section.top_bullets || []) {
-      const bullet = truncate(item.bullet, 190);
-      if (bullet && !bullets.includes(bullet)) bullets.push(bullet);
-      if (bullets.length >= limit) return bullets;
-    }
-  }
-  return bullets;
-}
-
-function topSections(match, limit = 5) {
-  return (match.sections || [])
-    .slice(0, limit)
-    .map(section => ({
-      title: section.title,
-      group: section.group,
-      terms: (section.matched_terms || []).slice(0, 8).join(', '),
-    }));
-}
-
-function buildCompetencies(context, profile, match, terms, profileForLane) {
-  const contextSkills = context.sections?.skills?.flatMap(section => section.bullets || []) || [];
-  const profileSkills = [
-    ...Object.values(profile.skills || {}).flatMap(value => Array.isArray(value) ? value : []),
-    ...Object.values(profile.role_keywords || {}).flatMap(value => Array.isArray(value) ? value : []),
-  ];
-  const laneTerms = match.role_lane_signals || [];
-  return dedupe([
-    ...profileForLane.competencies,
-    ...laneTerms,
-    ...terms.slice(0, 8),
-    ...profileSkills.slice(0, 12),
-    ...contextSkills,
-  ]).slice(0, 28).join(' | ');
-}
-
-function buildResumeDraft(request, profile, context, match, jdText) {
-  const contact = candidateContact(profile);
-  const terms = extractJdTerms(jdText);
-  const lane = laneProfile(match, request, terms);
-  const bullets = topBullets(match, 8);
-  const sections = topSections(match, 4);
-  const skills = buildCompetencies(context, profile, match, terms, lane);
-  const education = truncate(context.sections?.education?.[0]?.text || '', 420);
-
-  return [
-    `# ${contact.name}`,
+  // Future extension point: live GitHub repo evidence could be fetched here before prompt assembly.
+  const user = [
+    `# Material Request`,
     '',
-    contact.line,
+    `Type: ${type}`,
+    `Company: ${request.company || ''}`,
+    `Role: ${request.title || ''}`,
+    `URL: ${request.url || ''}`,
+    `Job ID: ${request.job_id || request.id || ''}`,
     '',
-    '## Professional Summary',
+    '# Private CV Source',
     '',
-    `${contact.name} is a computer science candidate focused on ${lane.label}, with experience across ${lane.summary_focus}.`,
+    sourceTexts.cv,
     '',
-    '## Core Competencies',
+    '# Structured Profile YAML',
     '',
-    skills || terms.join(' | '),
+    sourceTexts.profile,
     '',
-    '## Experience Highlights',
+    '# Resume Rules YAML',
     '',
-    ...(bullets.length ? bullets.map(bullet => `- ${bullet}`) : ['- Add role-specific bullets from the private career source after reviewing the cached job description.']),
+    sourceTexts.rules,
     '',
-    `## ${lane.evidence_heading}`,
+    voice,
+    '# Cached Job Description',
     '',
-    ...sections.map(section => `- ${section.title}${section.terms ? `: ${section.terms}` : ''}`),
+    jdText,
     '',
-    '## Education And Technical Foundation',
+    '# Local Career Context JSON',
     '',
-    education || 'See private career source for education and technical foundation.',
+    JSON.stringify(context || {}, null, 2),
     '',
+    '# Matched Career Evidence JSON',
+    '',
+    JSON.stringify(match || {}, null, 2),
+    '',
+    '# Output Contract',
+    '',
+    type === 'letter'
+      ? 'Return only the finished cover letter Markdown/text. It must be exactly three short paragraphs plus a plain signature line.'
+      : 'Return only the finished tailored resume Markdown. Do not include analysis, notes, or code fences.',
   ].join('\n');
+
+  return { system: instructions, user };
 }
 
-function buildLetterDraft(request, profile, match, jdText) {
-  const contact = candidateContact(profile);
-  const terms = extractJdTerms(jdText);
-  const lane = laneProfile(match, request, terms);
-  const bullets = topBullets(match, 3);
-  const proof = bullets.length
-    ? bullets.slice(0, 2).join(' ')
-    : 'My background combines technical problem solving, workflow improvement, and customer-facing communication.';
+async function buildResumeDraft(request, context, match, jdText, sourceTexts, guideText) {
+  if (!process.env.OPENAI_API_KEY) {
+    const error = new Error('OPENAI_API_KEY is required for resume generation');
+    error.blockReason = 'missing_openai_api_key';
+    throw error;
+  }
+  const prompt = buildMaterialPrompt({ type: 'resume', request, context, match, jdText, sourceTexts, guideText });
+  const client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_BASE_URL || undefined,
+  });
+  const response = await client.chat.completions.create({
+    model: openaiModel,
+    messages: [
+      { role: 'system', content: prompt.system },
+      { role: 'user', content: prompt.user },
+    ],
+    temperature: 0.35,
+  });
+  const markdown = response.choices?.[0]?.message?.content || '';
+  if (!markdown.trim()) throw new Error('OpenAI returned empty resume content');
+  return stripCodeFence(markdown);
+}
 
-  return [
-    `Dear ${request.company ? `${request.company} Hiring Team` : 'Hiring Team'},`,
-    '',
-    `I am interested in the ${request.title || 'open role'} at ${request.company || 'your company'} because it sits close to the kind of ${lane.label} work I am targeting: ${lane.letter_focus}.`,
-    '',
-    `${proof} I would bring that same mix of technical execution and customer-aware communication to this role, especially where the work involves understanding workflows, explaining tradeoffs, and helping teams adopt better systems.`,
-    '',
-    `I would welcome the chance to discuss how my background could support ${request.company || 'the team'} in this role.`,
-    '',
-    contact.name,
-    '',
-  ].join('\n');
+async function buildLetterDraft(request, context, match, jdText, sourceTexts, guideText) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    const error = new Error('ANTHROPIC_API_KEY is required for cover letter generation');
+    error.blockReason = 'missing_anthropic_api_key';
+    throw error;
+  }
+  const prompt = buildMaterialPrompt({ type: 'letter', request, context, match, jdText, sourceTexts, guideText });
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const response = await client.messages.create({
+    model: anthropicModel,
+    max_tokens: 1200,
+    system: prompt.system,
+    messages: [{ role: 'user', content: prompt.user }],
+    temperature: 0.35,
+  });
+  const markdown = llmTextFromAnthropic(response);
+  if (!markdown.trim()) throw new Error('Anthropic returned empty cover letter content');
+  return stripCodeFence(markdown);
+}
+
+function printDryRunPrompt(type, request, prompt) {
+  const provider = providerForRequest(type);
+  console.log(`\n===== DRY RUN: ${type.toUpperCase()} =====`);
+  console.log(`Provider: ${provider.provider}`);
+  console.log(`Model: ${provider.model}`);
+  console.log(`Job: ${request.company || 'Unknown company'} - ${request.title || 'Untitled role'}`);
+  console.log('\n--- SYSTEM / INSTRUCTIONS ---');
+  console.log(prompt.system);
+  console.log('\n--- USER PROMPT ---');
+  console.log(prompt.user);
+  console.log(`===== END DRY RUN: ${type.toUpperCase()} =====\n`);
 }
 
 function escapeHtml(value) {
@@ -524,15 +462,22 @@ const missingPrivateSources = requiredPrivateSources.filter(filePath => !existsS
 console.log(`Generation queue: ${queuePath}`);
 console.log(`Total requests: ${requests.length}`);
 console.log(`Pending requests: ${pending.length}`);
+if (dryRun) console.log('Dry run: prompts will be printed and no API calls, files, PDFs, or queue updates will be made.');
 
 if (!requests.length || !pending.length) {
   console.log('No queued materials to generate.');
   process.exit(0);
 }
 
-const profile = readYaml(profilePath);
 const rules = readYaml(rulesPath);
 const context = existsSync(contextPath) ? readJson(contextPath) : null;
+const sourceTexts = {
+  cv: readText(cvPath),
+  profile: readText(profilePath),
+  rules: readText(rulesPath),
+  voiceDna: readText(voiceDnaPath),
+};
+const guideText = readText(materialsGuidePath);
 let generated = 0;
 let blocked = 0;
 
@@ -563,9 +508,27 @@ for (const request of pending) {
 
   const jdText = readFileSync(request.jd_cache_path, 'utf8');
   const match = readJson(request.context_match_path);
-  const markdown = request.type === 'letter'
-    ? buildLetterDraft(request, profile, match, jdText)
-    : buildResumeDraft(request, profile, context, match, jdText);
+  if (dryRun) {
+    const type = request.type === 'letter' ? 'letter' : 'resume';
+    const prompt = buildMaterialPrompt({ type, request, context, match, jdText, sourceTexts, guideText });
+    printDryRunPrompt(type, request, prompt);
+    continue;
+  }
+
+  let markdown = '';
+  try {
+    markdown = request.type === 'letter'
+      ? await buildLetterDraft(request, context, match, jdText, sourceTexts, guideText)
+      : await buildResumeDraft(request, context, match, jdText, sourceTexts, guideText);
+  } catch (error) {
+    const reason = error.blockReason || (request.type === 'letter' ? 'anthropic_generation_failed' : 'openai_generation_failed');
+    markBlocked(request, reason);
+    blocked += 1;
+    console.log(`Generation blocked for ${request.type}: ${request.company} - ${request.title}`);
+    console.log(`  ${reason}: ${error.message}`);
+    continue;
+  }
+
   const output = writeMaterial(request, markdown);
   try {
     await renderPdf(output.htmlPath, output.pdfPath);
@@ -590,7 +553,7 @@ for (const request of pending) {
   }
 }
 
-writeQueue(requests);
+if (!dryRun) writeQueue(requests);
 
 console.log(`Generated: ${generated}`);
 console.log(`Blocked: ${blocked}`);

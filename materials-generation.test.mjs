@@ -1,14 +1,13 @@
 import assert from 'assert';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { chromium } from 'playwright';
 
 const repoRoot = process.cwd();
 const generatorPath = path.join(repoRoot, 'scripts/generate-queued-materials.mjs');
+const materialsGuidePath = path.join(repoRoot, 'docs/materials-generation.md');
 let passed = 0;
-let skipped = 0;
 
 function tmpDir(name) {
   return mkdtempSync(path.join(os.tmpdir(), `career-ops-${name}-`));
@@ -17,17 +16,19 @@ function tmpDir(name) {
 function writeFixtureSources(root) {
   const privateDir = path.join(root, 'private');
   const configDir = path.join(privateDir, 'config');
+  const supportDir = path.join(privateDir, 'support');
   const dataDir = path.join(root, 'data');
   const jdDir = path.join(dataDir, 'job-descriptions');
   const matchDir = path.join(dataDir, 'context-matches');
 
-  for (const dir of [configDir, jdDir, matchDir]) {
+  for (const dir of [configDir, supportDir, jdDir, matchDir]) {
     mkdirSync(dir, { recursive: true });
   }
 
   const profilePath = path.join(configDir, 'profile.yml');
   const cvPath = path.join(privateDir, 'cv.md');
   const rulesPath = path.join(configDir, 'resume_rules.yml');
+  const voicePath = path.join(supportDir, 'voice-dna.md');
   const contextPath = path.join(dataDir, 'career-context.json');
   const jdPath = path.join(jdDir, 'example-job.md');
   const matchPath = path.join(matchDir, 'example-job.json');
@@ -43,6 +44,7 @@ function writeFixtureSources(root) {
   ].join('\n'), 'utf8');
 
   writeFileSync(cvPath, '# Example CV\n\nPublic-safe fixture only.\n', 'utf8');
+  writeFileSync(voicePath, 'Use a warm, concise, direct tone in public-safe fixtures.\n', 'utf8');
   writeFileSync(rulesPath, [
     'resume:',
     '  pages: 1',
@@ -101,7 +103,7 @@ function writeFixtureSources(root) {
   writeFileSync(path.join(matchDir, 'example-job-letter.json'), readFileSync(matchPath, 'utf8'), 'utf8');
   writeFileSync(path.join(matchDir, 'sparse-job.json'), JSON.stringify({ sections: [] }, null, 2), 'utf8');
 
-  return { profilePath, cvPath, rulesPath, contextPath, jdPath, matchPath };
+  return { profilePath, cvPath, rulesPath, voicePath, contextPath, jdPath, matchPath };
 }
 
 function writeQueue(queuePath, rows) {
@@ -120,7 +122,7 @@ function writeQueue(queuePath, rows) {
   writeFileSync(queuePath, `${header}${body}\n`, 'utf8');
 }
 
-function runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, rulesPath }) {
+function runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, rulesPath, voicePath, dryRun = false, env = {} }) {
   const fixtureRoot = path.dirname(queuePath);
   return spawnSync(process.execPath, [
     generatorPath,
@@ -130,6 +132,9 @@ function runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, 
     contextPath,
     '--output-dir',
     outputDir,
+    '--materials-guide',
+    materialsGuidePath,
+    ...(dryRun ? ['--dry-run'] : []),
   ], {
     cwd: fixtureRoot,
     encoding: 'utf8',
@@ -138,18 +143,14 @@ function runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, 
       CAREER_OPS_PROFILE: profilePath,
       CAREER_OPS_CV: cvPath,
       CAREER_OPS_RESUME_RULES: rulesPath,
+      CAREER_OPS_VOICE_DNA: voicePath || path.join(fixtureRoot, 'private/support/voice-dna.md'),
+      OPENAI_API_KEY: '',
+      ANTHROPIC_API_KEY: '',
+      OPENAI_MODEL: '',
+      ANTHROPIC_MODEL: '',
+      ...env,
     },
   });
-}
-
-async function canLaunchChromium() {
-  try {
-    const browser = await chromium.launch({ headless: true });
-    await browser.close();
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function rowByJobId(queuePath, jobId) {
@@ -157,10 +158,6 @@ function rowByJobId(queuePath, jobId) {
   const headers = headerLine.split('\t');
   const rows = lines.map(line => Object.fromEntries(line.split('\t').map((value, index) => [headers[index], value])));
   return rows.find(row => row.job_id === jobId);
-}
-
-function markdownPathForOutput(outputPath) {
-  return outputPath.replace(/\.(pdf|html)$/, '.md');
 }
 
 {
@@ -194,17 +191,17 @@ function markdownPathForOutput(outputPath) {
 }
 
 {
-  const root = tmpDir('materials-lane-aware');
-  const { profilePath, cvPath, rulesPath, contextPath } = writeFixtureSources(root);
+  const root = tmpDir('materials-dry-run');
+  const { profilePath, cvPath, rulesPath, voicePath, contextPath } = writeFixtureSources(root);
   const queuePath = path.join(root, 'queue.tsv');
   const outputDir = path.join(root, 'output');
   const dataDir = path.join(root, 'data');
   const jdDir = path.join(dataDir, 'job-descriptions');
   const matchDir = path.join(dataDir, 'context-matches');
-  const salesJdPath = path.join(jdDir, 'sales-job.md');
-  const fdeJdPath = path.join(jdDir, 'fde-job.md');
+  const resumeJdPath = path.join(jdDir, 'resume-job.md');
+  const letterJdPath = path.join(jdDir, 'letter-job.md');
 
-  writeFileSync(salesJdPath, [
+  writeFileSync(resumeJdPath, [
     '# Sales Engineer',
     '',
     '## Extracted Text',
@@ -212,15 +209,15 @@ function markdownPathForOutput(outputPath) {
     'Sales Engineer role focused on discovery, demos, technical sales, proof of value, stakeholders, and ROI.',
     '',
   ].join('\n'), 'utf8');
-  writeFileSync(fdeJdPath, [
-    '# Forward Deployed Engineer',
+  writeFileSync(letterJdPath, [
+    '# Solutions Consultant',
     '',
     '## Extracted Text',
     '',
-    'Forward Deployed Engineer role focused on AI workflows, agents, automation, customer deployment, and technical prototyping.',
+    'Solutions Consultant role focused on implementation, customer workflows, demos, APIs, and stakeholder enablement.',
     '',
   ].join('\n'), 'utf8');
-  writeFileSync(path.join(matchDir, 'sales-job.json'), JSON.stringify({
+  writeFileSync(path.join(matchDir, 'resume-job.json'), JSON.stringify({
     role_lane: 'sales_engineering',
     role_lane_signals: ['sales engineer', 'discovery', 'demo', 'roi'],
     sections: [{
@@ -234,17 +231,17 @@ function markdownPathForOutput(outputPath) {
       ],
     }],
   }, null, 2), 'utf8');
-  writeFileSync(path.join(matchDir, 'fde-job.json'), JSON.stringify({
-    role_lane: 'ai_fde',
-    role_lane_signals: ['forward deployed', 'ai workflow', 'automation'],
+  writeFileSync(path.join(matchDir, 'letter-job.json'), JSON.stringify({
+    role_lane: 'solutions_engineering',
+    role_lane_signals: ['solutions consultant', 'implementation', 'api'],
     sections: [{
-      title: 'AI FDE Project Evidence',
-      group: 'projects',
-      matched_terms: ['ai', 'workflow', 'automation'],
-      lane_matched_terms: ['career ops', 'technical prototyping', 'automation'],
+      title: 'Solutions Evidence',
+      group: 'experience',
+      matched_terms: ['implementation', 'api', 'workflow'],
+      lane_matched_terms: ['implementation', 'customer workflows'],
       top_bullets: [
-        { bullet: 'Built a Career Ops job scanner project around AI workflows, agent-style automation, technical prototyping, and auditable outputs.' },
-        { bullet: 'Turned ambiguous workflow requirements into a working automation prototype with clear operating constraints.' },
+        { bullet: 'Mapped customer workflow requirements into implementation plans and enablement materials.' },
+        { bullet: 'Explained API and dashboard tradeoffs to technical and non-technical stakeholders.' },
       ],
     }],
   }, null, 2), 'utf8');
@@ -252,46 +249,42 @@ function markdownPathForOutput(outputPath) {
     {
       timestamp: '2026-07-25T00:00:00.000Z',
       type: 'resume',
-      job_id: 'sales-job',
+      job_id: 'resume-job',
       company: 'Example',
       title: 'Sales Engineer',
       url: 'https://example.test/sales',
       status: 'pending',
-      jd_cache_path: salesJdPath,
+      jd_cache_path: resumeJdPath,
     },
     {
       timestamp: '2026-07-25T00:00:01.000Z',
-      type: 'resume',
-      job_id: 'fde-job',
+      type: 'letter',
+      job_id: 'letter-job',
       company: 'Example',
-      title: 'Forward Deployed Engineer',
-      url: 'https://example.test/fde',
+      title: 'Solutions Consultant',
+      url: 'https://example.test/letter',
       status: 'pending',
-      jd_cache_path: fdeJdPath,
+      jd_cache_path: letterJdPath,
     },
   ]);
 
-  const result = runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, rulesPath });
+  const beforeQueue = readFileSync(queuePath, 'utf8');
+  const result = runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, rulesPath, voicePath, dryRun: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
-
-  const salesRow = rowByJobId(queuePath, 'sales-job');
-  const fdeRow = rowByJobId(queuePath, 'fde-job');
-  const salesMarkdown = readFileSync(markdownPathForOutput(salesRow.output_path), 'utf8');
-  const fdeMarkdown = readFileSync(markdownPathForOutput(fdeRow.output_path), 'utf8');
-
-  assert.ok(salesMarkdown.includes('sales engineering and technical GTM'));
-  assert.ok(salesMarkdown.includes('## Sales Engineering Evidence'));
-  assert.ok(salesMarkdown.includes('Discovery | Product Demos | Technical Sales'));
-  assert.ok(fdeMarkdown.includes('AI workflows and forward-deployed solution work'));
-  assert.ok(fdeMarkdown.includes('## AI/FDE Evidence'));
-  assert.ok(fdeMarkdown.includes('AI Workflows | Automation | Technical Prototyping'));
-  assert.notEqual(salesMarkdown, fdeMarkdown);
+  assert.equal(readFileSync(queuePath, 'utf8'), beforeQueue);
+  assert.ok(result.stdout.includes('Provider: OpenAI Chat Completions'));
+  assert.ok(result.stdout.includes('Provider: Anthropic Claude'));
+  assert.ok(result.stdout.includes('Model: gpt-4o'));
+  assert.ok(result.stdout.includes('Model: claude-sonnet-5'));
+  assert.ok(result.stdout.includes('Sales Engineer role focused on discovery'));
+  assert.ok(result.stdout.includes('Solutions Consultant role focused on implementation'));
+  assert.ok(result.stdout.includes('Use a warm, concise, direct tone'));
   passed += 1;
 }
 
-if (await canLaunchChromium()) {
-  const root = tmpDir('materials-pdf');
-  const { profilePath, cvPath, rulesPath, contextPath, jdPath } = writeFixtureSources(root);
+{
+  const root = tmpDir('materials-missing-provider-keys');
+  const { profilePath, cvPath, rulesPath, voicePath, contextPath, jdPath } = writeFixtureSources(root);
   const queuePath = path.join(root, 'queue.tsv');
   const outputDir = path.join(root, 'output');
   writeQueue(queuePath, [
@@ -315,57 +308,20 @@ if (await canLaunchChromium()) {
       status: 'pending',
       jd_cache_path: jdPath,
     },
-    {
-      timestamp: '2026-07-25T00:00:02.000Z',
-      type: 'resume',
-      job_id: 'sparse-job',
-      company: 'Example',
-      title: 'Sparse Resume',
-      url: 'https://example.test/sparse-job',
-      status: 'pending',
-      jd_cache_path: jdPath,
-    },
   ]);
 
-  const result = runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, rulesPath });
+  const result = runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, rulesPath, voicePath });
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
   const resumeRow = rowByJobId(queuePath, 'example-job');
   const letterRow = rowByJobId(queuePath, 'example-job-letter');
-  const sparseRow = rowByJobId(queuePath, 'sparse-job');
-  assert.equal(resumeRow.status, 'generated_pdf');
-  assert.equal(letterRow.status, 'generated_pdf');
-  assert.equal(sparseRow.status, 'generated_needs_content_review');
-  assert.ok(resumeRow.output_path.endsWith('.pdf'));
-  assert.ok(letterRow.output_path.endsWith('.pdf'));
-  assert.ok(sparseRow.output_path.endsWith('.pdf'));
-  assert.ok(existsSync(resumeRow.output_path), resumeRow.output_path);
-  assert.ok(existsSync(letterRow.output_path), letterRow.output_path);
-  assert.ok(existsSync(sparseRow.output_path), sparseRow.output_path);
-
-  const resumeValidationPath = resumeRow.output_path.replace(/\.pdf$/, '.validation.json');
-  const letterValidationPath = letterRow.output_path.replace(/\.pdf$/, '.validation.json');
-  const sparseValidationPath = sparseRow.output_path.replace(/\.pdf$/, '.validation.json');
-  const resumeValidation = JSON.parse(readFileSync(resumeValidationPath, 'utf8'));
-  const letterValidation = JSON.parse(readFileSync(letterValidationPath, 'utf8'));
-  const sparseValidation = JSON.parse(readFileSync(sparseValidationPath, 'utf8'));
-  assert.equal(resumeValidation.passed, true);
-  assert.equal(resumeValidation.pages, 1);
-  assert.deepEqual(resumeValidation.content_issues, []);
-  assert.equal(letterValidation.passed, true);
-  assert.ok(letterValidation.pages <= 2);
-  assert.equal(sparseValidation.passed, false);
-  assert.ok(sparseValidation.content_issues.some(issue => issue.startsWith('resume_too_few_bullets')));
-  assert.ok(sparseValidation.content_issues.includes('resume_contains_placeholder_text'));
-
-  const resumeMarkdown = readFileSync(resumeRow.output_path.replace(/\.pdf$/, '.md'), 'utf8');
-  const letterMarkdown = readFileSync(letterRow.output_path.replace(/\.pdf$/, '.md'), 'utf8');
-  assert.ok(!resumeMarkdown.includes('Generation Notes'));
-  assert.ok(!letterMarkdown.includes('Generated from cached JD'));
+  assert.equal(resumeRow.status, 'blocked_missing_openai_api_key');
+  assert.equal(letterRow.status, 'blocked_missing_anthropic_api_key');
+  assert.ok(!resumeRow.output_path);
+  assert.ok(!letterRow.output_path);
+  assert.ok(result.stdout.includes('missing_openai_api_key'));
+  assert.ok(result.stdout.includes('missing_anthropic_api_key'));
   passed += 1;
-} else {
-  console.log('Skipping PDF rendering assertion: Playwright Chromium is not available in this environment.');
-  skipped += 1;
 }
 
-console.log(`materials-generation: ${passed} passed, ${skipped} skipped`);
+console.log(`materials-generation: ${passed} passed`);
