@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import path from 'path';
 
 const DEFAULT_OUTPUT_PATH = 'data/ui-state.json';
@@ -20,6 +20,7 @@ const paths = {
   latestScanSummary: args.latestScanSummary || 'data/latest-scan-summary.json',
   companyCoverage: args.companyCoverage || 'data/company-coverage.json',
   careerContext: args.careerContext || 'data/career-context.json',
+  finalGenerationDir: args.finalGenerationDir || 'output/final-generation-packages',
 };
 
 function parseArgs(argv) {
@@ -316,6 +317,27 @@ function siblingPath(outputPath, extension) {
     : '';
 }
 
+function latestFinalPackage(jobId, type) {
+  const dir = path.join(paths.finalGenerationDir, safeFileId(jobId));
+  if (!existsSync(dir)) return {};
+  const suffix = `-${safeFileId(type)}-final-package.md`;
+  const packageFile = readdirSync(dir)
+    .filter(file => file.endsWith(suffix))
+    .sort()
+    .at(-1);
+  if (!packageFile) return {};
+  const packagePath = path.join(dir, packageFile);
+  const manifestPath = packagePath.replace(/\.md$/, '.json');
+  const manifest = existsSync(manifestPath) ? readJson(manifestPath) : null;
+  return {
+    final_package_path: packagePath,
+    final_package_exists: existsSync(packagePath),
+    final_package_manifest_path: manifestPath,
+    final_package_manifest_exists: existsSync(manifestPath),
+    final_package_manifest: manifest,
+  };
+}
+
 function countBy(items, key) {
   return items.reduce((acc, item) => {
     const value = item[key] || 'unknown';
@@ -366,6 +388,7 @@ const enrichedGenerationRequests = generationRequests.map(request => {
   const validation = validationPath ? readJson(validationPath) : null;
   const htmlPath = siblingPath(request.output_path, '.html');
   const markdownPath = siblingPath(request.output_path, '.md');
+  const finalPackage = latestFinalPackage(request.job_id, request.type);
   return {
     ...request,
     jd_cache_path: jdCachePath,
@@ -380,6 +403,7 @@ const enrichedGenerationRequests = generationRequests.map(request => {
     validation_path: validationPath,
     validation_exists: Boolean(validationPath && existsSync(validationPath)),
     validation,
+    ...finalPackage,
   };
 });
 const today = new Date().toISOString().slice(0, 10);
@@ -417,6 +441,7 @@ const state = {
     generated_pdf_count: enrichedGenerationRequests.filter(request => request.status === 'generated_pdf').length,
     generated_needs_content_review_count: enrichedGenerationRequests.filter(request => request.status === 'generated_needs_content_review').length,
     generated_needs_layout_review_count: enrichedGenerationRequests.filter(request => request.status === 'generated_needs_layout_review').length,
+    final_generation_packages_count: enrichedGenerationRequests.filter(request => request.final_package_exists).length,
     pending_generation_missing_jd_count: enrichedGenerationRequests.filter(request => request.status === 'pending' && !request.jd_cached).length,
     pending_generation_missing_context_match_count: enrichedGenerationRequests.filter(request => request.status === 'pending' && !request.context_matched).length,
     active_review_count: queues.active_review.length,

@@ -213,6 +213,22 @@ async function runQueuedMaterials(button) {
   }
 }
 
+async function prepareFinalPackage(item, button) {
+  button.disabled = true;
+  const previousText = button.textContent;
+  button.textContent = 'Preparing...';
+  try {
+    await requestJson('/api/prepare-final-generation-package', {
+      method: 'POST',
+      body: JSON.stringify({ type: item.type, job: item }),
+    });
+    await loadState();
+  } finally {
+    button.textContent = previousText;
+    button.disabled = false;
+  }
+}
+
 async function cacheJobDescription(item, button) {
   button.disabled = true;
   const previousText = button.textContent;
@@ -685,6 +701,7 @@ function renderGenerationQueue() {
     badge(`${state?.stats?.generated_pdf_count ?? 0} generated`, 'success'),
     badge(`${state?.stats?.generated_needs_content_review_count ?? 0} content review`, 'warn'),
     badge(`${state?.stats?.generated_needs_layout_review_count ?? 0} layout review`, 'warn'),
+    badge(`${state?.stats?.final_generation_packages_count ?? 0} final packages`, 'pending'),
   );
   els.generationContent.append(toolbar);
 
@@ -736,10 +753,19 @@ function renderGenerationQueue() {
       localFileLink('Open HTML', request.html_path, request.html_exists),
       localFileLink('Open Markdown', request.markdown_path, request.markdown_exists),
       localFileLink('Open Validation', request.validation_path, request.validation_exists),
+      localFileLink('Open Final Package', request.final_package_path, request.final_package_exists),
+      localFileLink('Open Package Manifest', request.final_package_manifest_path, request.final_package_manifest_exists),
     ].filter(Boolean)) {
       materialLinks.append(link);
     }
     if (materialLinks.children.length) actions.append(materialLinks);
+    if (request.jd_cached && request.context_matched) {
+      actions.append(makeButton(
+        request.final_package_exists ? 'Refresh Final Package' : 'Prepare Final Package',
+        'token-action',
+        button => prepareFinalPackage(request, button),
+      ));
+    }
     if (!request.jd_cached) {
       actions.append(makeButton('Cache JD', 'secondary', button => cacheJobDescription(request, button)));
     }
@@ -757,6 +783,12 @@ function renderGenerationQueue() {
       outputPath.className = 'material-path';
       outputPath.textContent = request.output_path;
       main.append(outputPath);
+    }
+    if (request.final_package_path) {
+      const packagePath = document.createElement('p');
+      packagePath.className = 'material-path';
+      packagePath.textContent = request.final_package_path;
+      main.append(packagePath);
     }
     row.append(main, actions);
     els.generationContent.append(row);

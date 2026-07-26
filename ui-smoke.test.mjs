@@ -28,6 +28,7 @@ function writeFixtureRepo(root) {
     'scripts/build-career-context.mjs',
     'scripts/build-ui-state.mjs',
     'scripts/generate-queued-materials.mjs',
+    'scripts/prepare-final-generation-package.mjs',
     'ui/index.html',
     'ui/app.js',
     'ui/styles.css',
@@ -36,6 +37,8 @@ function writeFixtureRepo(root) {
   }
 
   mkdirSync(path.join(root, 'data'), { recursive: true });
+  mkdirSync(path.join(root, 'data/job-descriptions'), { recursive: true });
+  mkdirSync(path.join(root, 'data/context-matches'), { recursive: true });
   mkdirSync(path.join(root, 'private/config'), { recursive: true });
   mkdirSync(path.join(root, 'output/generated-materials/example-job'), { recursive: true });
   if (existsSync(path.join(repoRoot, 'node_modules'))) {
@@ -79,6 +82,22 @@ function writeFixtureRepo(root) {
   ].join('\n'), 'utf8');
 
   writeFileSync(path.join(root, 'data/job-actions.tsv'), 'timestamp\taction\tjob_id\tcompany\ttitle\turl\tnote\n', 'utf8');
+  writeFileSync(path.join(root, 'data/job-descriptions/example-job.md'), [
+    '# Example Job',
+    '',
+    '## Extracted Text',
+    '',
+    'Solutions Engineer role focused on discovery, demos, implementation, APIs, and customer enablement.',
+    '',
+  ].join('\n'), 'utf8');
+  writeFileSync(path.join(root, 'data/context-matches/example-job.json'), JSON.stringify({
+    sections: [{
+      title: 'Example Experience',
+      group: 'experience',
+      matched_terms: ['discovery', 'demos', 'implementation'],
+      top_bullets: [{ bullet: 'Built workflow automation and customer enablement materials.' }],
+    }],
+  }, null, 2), 'utf8');
   writeFileSync(path.join(root, 'data/generation-requests.tsv'), [
     'timestamp\ttype\tjob_id\tcompany\ttitle\turl\tstatus\tjd_cache_path\toutput_path',
     '2026-07-25T00:00:00.000Z\tresume\texample-job\tExample Co\tSolutions Engineer\thttps://example.test/jobs/solutions-engineer\tgenerated_pdf\tdata/job-descriptions/example-job.md\toutput/generated-materials/example-job/example-resume.pdf',
@@ -268,6 +287,19 @@ async function main() {
     const runResult = JSON.parse(runResponse.body);
     assert.equal(runResult.ok, true);
     assert.ok(runResult.stdout.includes('Generation queue: data/generation-requests.tsv'));
+
+    const packageResponse = await request(port, 'POST', '/api/prepare-final-generation-package', JSON.stringify({
+      type: 'resume',
+      job: state.generation_requests[0],
+    }));
+    assert.equal(packageResponse.status, 200);
+    const packageResult = JSON.parse(packageResponse.body);
+    assert.equal(packageResult.ok, true);
+    assert.ok(packageResult.package_path.endsWith('-resume-final-package.md'));
+
+    const packageFile = await request(port, 'GET', `/api/local-file?path=${encodeURIComponent(packageResult.package_path)}`);
+    assert.equal(packageFile.status, 200);
+    assert.ok(packageFile.body.includes('Final Resume Generation Package'));
 
     assert.ok(existsSync(path.join(root, 'data/ui-state.json')));
     passed += 1;

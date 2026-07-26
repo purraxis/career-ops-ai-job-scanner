@@ -182,6 +182,8 @@ Each generated PDF receives a `.validation.json` sidecar. Resume requests are ex
 
 The Generation Queue view acts as the local materials browser. For generated requests, it shows PDF, HTML, Markdown, and validation links when those files exist, plus page/word badges and validation issues. The local file endpoint is constrained to ignored generated/context paths so private outputs can be reviewed in the browser without making them public.
 
+For final AI-assisted generation, the dashboard uses an explicit package-preparation step. Clicking `Prepare Final Package` gathers the cached job description, private CV, structured profile, resume rules, matched career context, writing guidance, and any private material-kit examples into an ignored package under `output/final-generation-packages/`. This prepares the exact source bundle for a token-cost final generation step, but it does not call an LLM automatically.
+
 The supporting local adapter files are generated and ignored by git:
 
 - `data/latest-scan-summary.json`

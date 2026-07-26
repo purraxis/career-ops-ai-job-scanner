@@ -292,6 +292,31 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === 'POST' && req.url === '/api/prepare-final-generation-package') {
+      const body = await readBody(req);
+      const job = body.job || {};
+      const type = body.type || job.type || 'resume';
+      const jobId = job.id || job.job_id || stableJobId(job.url || job.final_url || '', job.company, job.title);
+      const result = await runNodeScript('scripts/prepare-final-generation-package.mjs', [
+        '--type', type,
+        '--job-id', jobId,
+        '--company', job.company || '',
+        '--title', job.title || '',
+        '--url', job.url || job.final_url || '',
+        '--jd', job.jd_cache_path || jobDescriptionPath(job),
+        '--context', job.context_match_path || contextMatchPath(job),
+      ]);
+      await rebuildAppState();
+      let parsed = null;
+      try {
+        parsed = JSON.parse(result.stdout);
+      } catch {
+        parsed = { stdout: result.stdout, stderr: result.stderr };
+      }
+      send(res, 200, { ok: true, ...parsed });
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/api/cache-job-description') {
       const body = await readBody(req);
       const job = body.job || {};
