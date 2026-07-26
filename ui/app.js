@@ -166,6 +166,22 @@ async function requestGeneration(type, item, button) {
   }
 }
 
+async function runQueuedMaterials(button) {
+  button.disabled = true;
+  const previousText = button.textContent;
+  button.textContent = 'Generating...';
+  try {
+    await requestJson('/api/generate-queued-materials', {
+      method: 'POST',
+      body: '{}',
+    });
+    await loadState();
+  } finally {
+    button.textContent = previousText;
+    button.disabled = false;
+  }
+}
+
 async function cacheJobDescription(item, button) {
   button.disabled = true;
   const previousText = button.textContent;
@@ -418,9 +434,12 @@ function renderDetail(item) {
   const actionContext = viewConfig[currentView]?.actionContext || '';
   const title = document.createElement('h3');
   title.textContent = item.title || item.label || 'Untitled job';
-  const company = document.createElement('p');
+  const company = document.createElement('div');
   company.className = 'detail-company';
-  company.textContent = item.company || 'Unknown company';
+  const companyText = document.createElement('p');
+  companyText.textContent = item.company || 'Unknown company';
+  company.append(companyText);
+  appendBadges(company, item, latestAction);
 
   const details = document.createElement('div');
   details.className = 'detail-grid';
@@ -463,13 +482,23 @@ function renderDetail(item) {
     actions.append(makeButton('Log Follow-Up', 'secondary', button => logJobAction('saved_for_later', item, button, 'Follow-up noted from dashboard')));
   }
   actions.append(
-    makeButton('Request Resume', 'token-action', button => requestGeneration('resume', item, button)),
-    makeButton('Request Letter', 'token-action', button => requestGeneration('letter', item, button)),
+    makeButton(
+      hasGenerationRequest(item, 'resume') ? 'Resume Queued' : 'Queue Resume',
+      'token-action',
+      button => requestGeneration('resume', item, button),
+      hasGenerationRequest(item, 'resume'),
+    ),
+    makeButton(
+      hasGenerationRequest(item, 'letter') ? 'Letter Queued' : 'Queue Letter',
+      'token-action',
+      button => requestGeneration('letter', item, button),
+      hasGenerationRequest(item, 'letter'),
+    ),
   );
 
   const tokenNote = document.createElement('p');
   tokenNote.className = 'detail-note';
-  tokenNote.textContent = 'Request buttons only add items to the local queue. Actual document generation stays a separate explicit token-cost command.';
+  tokenNote.textContent = 'Queue buttons only write local requests. Deterministic PDF generation runs separately and does not spend LLM tokens.';
 
   els.detailPanel.append(title, company, details, actions, tokenNote);
 }
@@ -484,6 +513,38 @@ function generationRequestSummary(item) {
 
 function generationRequestsForItem(item) {
   return (state?.generation_requests || []).filter(request => request.job_id === item.id);
+}
+
+function hasGenerationRequest(item, type) {
+  return generationRequestsForItem(item).some(request => request.type === type);
+}
+
+function badge(label, variant = '') {
+  const node = document.createElement('span');
+  node.className = `status-badge ${variant}`.trim();
+  node.textContent = label;
+  return node;
+}
+
+function statusVariant(status = '') {
+  if (status === 'generated_pdf') return 'success';
+  if (status.includes('review')) return 'warn';
+  if (status.startsWith('blocked')) return 'danger';
+  if (status === 'pending') return 'pending';
+  return '';
+}
+
+function appendBadges(parent, item, latestAction) {
+  const badges = document.createElement('div');
+  badges.className = 'status-badges';
+  if (item.status) badges.append(badge(item.status, statusVariant(item.status)));
+  badges.append(item.jd_cached ? badge('JD cached', 'success') : badge('JD missing', 'warn'));
+  badges.append(item.context_matched ? badge('context matched', 'success') : badge('context missing', 'warn'));
+  if (latestAction) badges.append(badge(actionLabel(latestAction.action), 'pending'));
+  for (const request of generationRequestsForItem(item)) {
+    badges.append(badge(`${request.type}: ${request.status || 'pending'}`, statusVariant(request.status || 'pending')));
+  }
+  parent.append(badges);
 }
 
 function addMetric(parent, label, value) {
@@ -569,6 +630,17 @@ function renderGenerationQueue() {
   els.viewMeta.textContent = `${requests.length} material requests`;
   els.generationContent.innerHTML = '';
 
+  const toolbar = document.createElement('div');
+  toolbar.className = 'queue-toolbar';
+  toolbar.append(
+    makeButton('Run Local Generator', 'primary', button => runQueuedMaterials(button), !requests.some(request => request.status === 'pending')),
+    badge(`${state?.stats?.pending_generation_requests_count ?? 0} pending`, 'pending'),
+    badge(`${state?.stats?.generated_pdf_count ?? 0} generated`, 'success'),
+    badge(`${state?.stats?.generated_needs_content_review_count ?? 0} content review`, 'warn'),
+    badge(`${state?.stats?.generated_needs_layout_review_count ?? 0} layout review`, 'warn'),
+  );
+  els.generationContent.append(toolbar);
+
   if (!requests.length) {
     const empty = document.createElement('p');
     empty.className = 'empty';
@@ -595,6 +667,13 @@ function renderGenerationQueue() {
 
     const actions = document.createElement('div');
     actions.className = 'request-actions';
+    actions.append(badge(request.status || 'pending', statusVariant(request.status || 'pending')));
+    if (request.validation?.pages) {
+      actions.append(badge(`${request.validation.pages} page${request.validation.pages === 1 ? '' : 's'}`, request.validation.passed ? 'success' : 'warn'));
+    }
+    if (request.validation?.words) {
+      actions.append(badge(`${request.validation.words} words`, request.validation.passed ? 'success' : 'warn'));
+    }
     if (request.url) {
       const open = document.createElement('a');
       open.href = request.url;
@@ -607,6 +686,18 @@ function renderGenerationQueue() {
       const output = document.createElement('span');
       output.textContent = request.output_path;
       actions.append(output);
+    }
+    if (!request.jd_cached) {
+      actions.append(makeButton('Cache JD', 'secondary', button => cacheJobDescription(request, button)));
+    }
+    if (request.jd_cached && !request.context_matched) {
+      actions.append(makeButton('Match Context', 'secondary', button => matchCareerContext(request, button)));
+    }
+    if (request.validation?.issues?.length) {
+      const issues = document.createElement('p');
+      issues.className = 'request-issues';
+      issues.textContent = request.validation.issues.join(' | ');
+      main.append(issues);
     }
     row.append(main, actions);
     els.generationContent.append(row);

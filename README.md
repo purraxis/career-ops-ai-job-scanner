@@ -150,7 +150,7 @@ The action log is append-only. `scripts/build-ui-state.mjs` reads `data/job-acti
 - applied jobs,
 - apply-today jobs moved into the pipeline during the current day.
 
-Generation requests are also append-only. Clicking `Request Resume` or `Request Letter` writes a local queue item to `data/generation-requests.tsv`; it does not generate documents or call an LLM.
+Generation requests are also append-only. Clicking `Queue Resume` or `Queue Letter` writes a local queue item to `data/generation-requests.tsv`; it does not call an LLM.
 
 Job descriptions can be cached locally before generation:
 
@@ -174,9 +174,9 @@ The explicit command boundary for later token-cost generation is:
 npm run generate:queued-materials
 ```
 
-That command checks whether private career sources, resume rules, cached job descriptions, and career-context matches are present. Ready requests are converted into local Markdown, HTML, and PDF drafts under ignored `output/generated-materials/`; blocked requests are marked in `data/generation-requests.tsv`.
+The dashboard exposes the same deterministic path through `Run Local Generator` in the Generation Queue view. That action checks whether private career sources, resume rules, cached job descriptions, and career-context matches are present. Ready requests are converted into local Markdown, HTML, and PDF drafts under ignored `output/generated-materials/`; blocked requests are marked in `data/generation-requests.tsv`.
 
-Each generated PDF receives a `.validation.json` sidecar. Resume requests are expected to render as one page; if validation detects a layout issue, the request status becomes `generated_needs_layout_review` instead of plain generated. This local generator is deterministic and token-free. It is a staging layer for review and future LLM generation, not a substitute for final human review. Job descriptions, context matches, and generated materials should stay in ignored local paths such as `data/job-descriptions/`, `data/context-matches/`, and `output/`.
+Each generated PDF receives a `.validation.json` sidecar. Resume requests are expected to render as one page; if validation detects a layout issue, the request status becomes `generated_needs_layout_review` instead of plain generated. If content is too sparse or placeholder-heavy, the request status becomes `generated_needs_content_review`. This local generator is deterministic and token-free. It is a staging layer for review and future LLM generation, not a substitute for final human review. Job descriptions, context matches, and generated materials should stay in ignored local paths such as `data/job-descriptions/`, `data/context-matches/`, and `output/`.
 
 The supporting local adapter files are generated and ignored by git:
 

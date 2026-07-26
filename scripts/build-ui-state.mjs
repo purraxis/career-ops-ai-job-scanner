@@ -304,6 +304,12 @@ function readJson(filePath, fallback = null) {
   }
 }
 
+function validationPathForOutput(outputPath) {
+  return outputPath && outputPath.endsWith('.pdf')
+    ? outputPath.replace(/\.pdf$/, '.validation.json')
+    : '';
+}
+
 function countBy(items, key) {
   return items.reduce((acc, item) => {
     const value = item[key] || 'unknown';
@@ -350,12 +356,18 @@ const enrichedGenerationRequests = generationRequests.map(request => {
     company: request.company,
     title: request.title,
   });
+  const validationPath = validationPathForOutput(request.output_path);
+  const validation = validationPath ? readJson(validationPath) : null;
   return {
     ...request,
     jd_cache_path: jdCachePath,
     jd_cached: existsSync(jdCachePath),
     context_match_path: matchPath,
     context_matched: existsSync(matchPath),
+    output_exists: Boolean(request.output_path && existsSync(request.output_path)),
+    validation_path: validationPath,
+    validation_exists: Boolean(validationPath && existsSync(validationPath)),
+    validation,
   };
 });
 const today = new Date().toISOString().slice(0, 10);
@@ -390,6 +402,9 @@ const state = {
     job_actions_count: jobActions.length,
     generation_requests_count: enrichedGenerationRequests.length,
     pending_generation_requests_count: enrichedGenerationRequests.filter(request => request.status === 'pending').length,
+    generated_pdf_count: enrichedGenerationRequests.filter(request => request.status === 'generated_pdf').length,
+    generated_needs_content_review_count: enrichedGenerationRequests.filter(request => request.status === 'generated_needs_content_review').length,
+    generated_needs_layout_review_count: enrichedGenerationRequests.filter(request => request.status === 'generated_needs_layout_review').length,
     pending_generation_missing_jd_count: enrichedGenerationRequests.filter(request => request.status === 'pending' && !request.jd_cached).length,
     pending_generation_missing_context_match_count: enrichedGenerationRequests.filter(request => request.status === 'pending' && !request.context_matched).length,
     active_review_count: queues.active_review.length,

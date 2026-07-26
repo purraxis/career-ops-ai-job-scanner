@@ -39,7 +39,7 @@ function send(res, status, body, contentType = 'application/json; charset=utf-8'
     'content-type': contentType,
     'cache-control': 'no-store',
   });
-  res.end(typeof body === 'string' ? body : JSON.stringify(body, null, 2));
+  res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body, null, 2));
 }
 
 function readBody(req) {
@@ -132,12 +132,12 @@ function safeFileId(value) {
 }
 
 function jobDescriptionPath(job = {}) {
-  const id = job.id || stableJobId(job.url || job.final_url || '', job.company, job.title);
+  const id = job.id || job.job_id || stableJobId(job.url || job.final_url || '', job.company, job.title);
   return join('data/job-descriptions', `${safeFileId(id)}.md`);
 }
 
 function contextMatchPath(job = {}) {
-  const id = job.id || stableJobId(job.url || job.final_url || '', job.company, job.title);
+  const id = job.id || job.job_id || stableJobId(job.url || job.final_url || '', job.company, job.title);
   return join('data/context-matches', `${safeFileId(id)}.json`);
 }
 
@@ -149,7 +149,7 @@ function appendJobAction(action, job = {}, note = '') {
   const row = [
     new Date().toISOString(),
     sanitizeTsv(action),
-    sanitizeTsv(job.id || stableJobId(job.url || job.final_url || '', job.company, job.title)),
+    sanitizeTsv(job.id || job.job_id || stableJobId(job.url || job.final_url || '', job.company, job.title)),
     sanitizeTsv(job.company),
     sanitizeTsv(job.title),
     sanitizeTsv(job.url || job.final_url || ''),
@@ -170,7 +170,7 @@ function appendGenerationRequest(type, job = {}) {
   const row = [
     new Date().toISOString(),
     sanitizeTsv(type),
-    sanitizeTsv(job.id || stableJobId(job.url || job.final_url || '', job.company, job.title)),
+    sanitizeTsv(job.id || job.job_id || stableJobId(job.url || job.final_url || '', job.company, job.title)),
     sanitizeTsv(job.company),
     sanitizeTsv(job.title),
     sanitizeTsv(job.url || job.final_url || ''),
@@ -250,6 +250,13 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === 'POST' && req.url === '/api/generate-queued-materials') {
+      const result = await runNodeScript('scripts/generate-queued-materials.mjs');
+      await rebuildAppState();
+      send(res, 200, { ok: true, stdout: result.stdout, stderr: result.stderr });
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/api/cache-job-description') {
       const body = await readBody(req);
       const job = body.job || {};
@@ -260,7 +267,7 @@ const server = createServer(async (req, res) => {
       }
       const result = await runNodeScript('scripts/cache-job-description.mjs', [
         '--url', url,
-        '--job-id', job.id || stableJobId(url, job.company, job.title),
+        '--job-id', job.id || job.job_id || stableJobId(url, job.company, job.title),
         '--company', job.company || '',
         '--title', job.title || '',
       ]);
@@ -278,7 +285,7 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST' && req.url === '/api/match-career-context') {
       const body = await readBody(req);
       const job = body.job || {};
-      const jobId = job.id || stableJobId(job.url || job.final_url || '', job.company, job.title);
+      const jobId = job.id || job.job_id || stableJobId(job.url || job.final_url || '', job.company, job.title);
       const result = await runNodeScript('scripts/match-career-context.mjs', [
         '--job-id', jobId,
         '--jd', job.jd_cache_path || jobDescriptionPath(job),
@@ -292,24 +299,6 @@ const server = createServer(async (req, res) => {
         parsed = { stdout: result.stdout, stderr: result.stderr };
       }
       send(res, 200, { ok: true, ...parsed });
-      return;
-    }
-
-    if (req.method === 'POST' && req.url === '/api/generate-resume') {
-      send(res, 402, {
-        ok: false,
-        token_cost_action: true,
-        message: 'Resume generation is intentionally not automatic. Wire this endpoint to the existing generation workflow when you want an explicit token-spending action.',
-      });
-      return;
-    }
-
-    if (req.method === 'POST' && req.url === '/api/generate-cover-letter') {
-      send(res, 402, {
-        ok: false,
-        token_cost_action: true,
-        message: 'Cover letter generation is intentionally not automatic. Wire this endpoint to the existing generation workflow when you want an explicit token-spending action.',
-      });
       return;
     }
 
