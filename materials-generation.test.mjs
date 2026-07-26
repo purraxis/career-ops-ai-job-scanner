@@ -28,6 +28,7 @@ function writeFixtureSources(root) {
   const profilePath = path.join(configDir, 'profile.yml');
   const cvPath = path.join(privateDir, 'cv.md');
   const rulesPath = path.join(configDir, 'resume_rules.yml');
+  const githubEvidencePath = path.join(configDir, 'github_evidence.yml');
   const voicePath = path.join(supportDir, 'voice-dna.md');
   const contextPath = path.join(dataDir, 'career-context.json');
   const jdPath = path.join(jdDir, 'example-job.md');
@@ -53,6 +54,28 @@ function writeFixtureSources(root) {
     '  min_resume_bullets: 6',
     '  min_letter_words: 50',
     '  min_letter_paragraphs: 3',
+    '',
+  ].join('\n'), 'utf8');
+  writeFileSync(githubEvidencePath, [
+    'github_owner: purraxis',
+    'skipped_repos:',
+    '  - repo: weak-forked-starter',
+    '    reason: "fork with no authored commits found in recent commit sample"',
+    'github_evidenced_skills:',
+    '  - skill: JavaScript',
+    '    evidenced_by:',
+    '      - career-ops-ai-job-scanner',
+    '  - skill: Playwright',
+    '    evidenced_by:',
+    '      - career-ops-ai-job-scanner',
+    'github_projects:',
+    '  - repo: career-ops-ai-job-scanner',
+    '    url: https://github.com/purraxis/career-ops-ai-job-scanner',
+    '    one_line_description: "Personalized career operations dashboard that scans job sources, filters roles, manages review queues, and prepares application materials."',
+    '    evidenced_technologies:',
+    '      - JavaScript',
+    '      - Playwright',
+    '      - YAML',
     '',
   ].join('\n'), 'utf8');
 
@@ -103,7 +126,7 @@ function writeFixtureSources(root) {
   writeFileSync(path.join(matchDir, 'example-job-letter.json'), readFileSync(matchPath, 'utf8'), 'utf8');
   writeFileSync(path.join(matchDir, 'sparse-job.json'), JSON.stringify({ sections: [] }, null, 2), 'utf8');
 
-  return { profilePath, cvPath, rulesPath, voicePath, contextPath, jdPath, matchPath };
+  return { profilePath, cvPath, rulesPath, githubEvidencePath, voicePath, contextPath, jdPath, matchPath };
 }
 
 function writeQueue(queuePath, rows) {
@@ -122,7 +145,7 @@ function writeQueue(queuePath, rows) {
   writeFileSync(queuePath, `${header}${body}\n`, 'utf8');
 }
 
-function runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, rulesPath, voicePath, dryRun = false, env = {} }) {
+function runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, rulesPath, githubEvidencePath, voicePath, dryRun = false, env = {} }) {
   const fixtureRoot = path.dirname(queuePath);
   return spawnSync(process.execPath, [
     generatorPath,
@@ -143,6 +166,7 @@ function runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, 
       CAREER_OPS_PROFILE: profilePath,
       CAREER_OPS_CV: cvPath,
       CAREER_OPS_RESUME_RULES: rulesPath,
+      CAREER_OPS_GITHUB_EVIDENCE: githubEvidencePath || path.join(fixtureRoot, 'private/config/github_evidence.yml'),
       CAREER_OPS_VOICE_DNA: voicePath || path.join(fixtureRoot, 'private/support/voice-dna.md'),
       OPENAI_API_KEY: '',
       ANTHROPIC_API_KEY: '',
@@ -192,7 +216,7 @@ function rowByJobId(queuePath, jobId) {
 
 {
   const root = tmpDir('materials-dry-run');
-  const { profilePath, cvPath, rulesPath, voicePath, contextPath } = writeFixtureSources(root);
+  const { profilePath, cvPath, rulesPath, githubEvidencePath, voicePath, contextPath } = writeFixtureSources(root);
   const queuePath = path.join(root, 'queue.tsv');
   const outputDir = path.join(root, 'output');
   const dataDir = path.join(root, 'data');
@@ -269,7 +293,7 @@ function rowByJobId(queuePath, jobId) {
   ]);
 
   const beforeQueue = readFileSync(queuePath, 'utf8');
-  const result = runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, rulesPath, voicePath, dryRun: true });
+  const result = runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, rulesPath, githubEvidencePath, voicePath, dryRun: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.equal(readFileSync(queuePath, 'utf8'), beforeQueue);
   assert.ok(result.stdout.includes('Provider: OpenAI Chat Completions'));
@@ -279,6 +303,44 @@ function rowByJobId(queuePath, jobId) {
   assert.ok(result.stdout.includes('Sales Engineer role focused on discovery'));
   assert.ok(result.stdout.includes('Solutions Consultant role focused on implementation'));
   assert.ok(result.stdout.includes('Use a warm, concise, direct tone'));
+  assert.ok(result.stdout.includes('# GitHub Evidence YAML'));
+  assert.ok(result.stdout.includes('github_projects:'));
+  assert.ok(result.stdout.includes('career-ops-ai-job-scanner'));
+  assert.ok(result.stdout.includes('weak-forked-starter'));
+  assert.ok(result.stdout.includes('Do not use skipped, weak, forked, starter, or ambiguous repos unless they are explicitly marked as approved'));
+  passed += 1;
+}
+
+{
+  const root = tmpDir('materials-missing-github-evidence');
+  const { profilePath, cvPath, rulesPath, voicePath, contextPath, jdPath } = writeFixtureSources(root);
+  const queuePath = path.join(root, 'queue.tsv');
+  const outputDir = path.join(root, 'output');
+  writeQueue(queuePath, [{
+    timestamp: '2026-07-25T00:00:00.000Z',
+    type: 'resume',
+    job_id: 'example-job',
+    company: 'Example',
+    title: 'Solutions Engineer',
+    url: 'https://example.test/job',
+    status: 'pending',
+    jd_cache_path: jdPath,
+  }]);
+
+  const result = runGenerator({
+    queuePath,
+    contextPath,
+    outputDir,
+    profilePath,
+    cvPath,
+    rulesPath,
+    githubEvidencePath: path.join(root, 'missing-github-evidence.yml'),
+    voicePath,
+    dryRun: true,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.ok(result.stdout.includes('github evidence source not found'));
+  assert.ok(result.stdout.includes('do not invent Selected Projects or GitHub-backed technologies'));
   passed += 1;
 }
 

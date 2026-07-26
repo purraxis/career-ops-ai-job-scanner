@@ -148,6 +148,21 @@ function writeFixtureRepo(root) {
     '  min_resume_bullets: 6',
     '',
   ].join('\n'), 'utf8');
+  writeFileSync(path.join(root, 'private/config/github_evidence.yml'), [
+    'github_owner: purraxis',
+    'skipped_repos:',
+    '  - repo: weak-forked-starter',
+    '    reason: "fork with no authored commits found in recent commit sample"',
+    'github_projects:',
+    '  - repo: career-ops-ai-job-scanner',
+    '    url: https://github.com/purraxis/career-ops-ai-job-scanner',
+    '    one_line_description: "Personalized job scanner dashboard."',
+    '    evidenced_technologies:',
+    '      - JavaScript',
+    '      - Playwright',
+    '      - YAML',
+    '',
+  ].join('\n'), 'utf8');
 }
 
 function waitForServer(child) {
@@ -300,6 +315,9 @@ async function main() {
     const packageFile = await request(port, 'GET', `/api/local-file?path=${encodeURIComponent(packageResult.package_path)}`);
     assert.equal(packageFile.status, 200);
     assert.ok(packageFile.body.includes('Final Resume Generation Package'));
+    assert.ok(packageFile.body.includes('GitHub Evidence YAML'));
+    assert.ok(packageFile.body.includes('career-ops-ai-job-scanner'));
+    assert.ok(packageFile.body.includes('weak-forked-starter'));
 
     assert.ok(existsSync(path.join(root, 'data/ui-state.json')));
     passed += 1;

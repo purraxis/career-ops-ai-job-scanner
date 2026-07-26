@@ -17,6 +17,7 @@ const contextPath = args.context || 'data/career-context.json';
 const profilePath = process.env.CAREER_OPS_PROFILE || 'private/config/profile.yml';
 const cvPath = process.env.CAREER_OPS_CV || 'private/cv.md';
 const rulesPath = process.env.CAREER_OPS_RESUME_RULES || 'private/config/resume_rules.yml';
+const githubEvidencePath = args.githubEvidence || process.env.CAREER_OPS_GITHUB_EVIDENCE || 'private/config/github_evidence.yml';
 const voiceDnaPath = process.env.CAREER_OPS_VOICE_DNA || 'private/support/voice-dna.md';
 const materialsGuidePath = args.materialsGuide || 'docs/materials-generation.md';
 const dryRun = Boolean(args.dryRun);
@@ -122,8 +123,26 @@ function buildMaterialPrompt({ type, request, context, match, jdText, sourceText
         '',
       ].join('\n')
     : '';
+  const githubEvidence = type === 'resume'
+    ? [
+        '# GitHub Evidence YAML',
+        '',
+        sourceTexts.githubEvidence || [
+          '(github evidence source not found; do not invent Selected Projects or GitHub-backed technologies)',
+          `Expected source: ${githubEvidencePath}`,
+        ].join('\n'),
+        '',
+        '# GitHub Evidence Rules',
+        '',
+        '- Use github_projects as the only source for Selected Projects.',
+        '- Feature career-ops-ai-job-scanner first whenever a Selected Projects section is included.',
+        '- Use only evidenced_technologies and evidenced functionality from the GitHub evidence source.',
+        '- Do not use skipped, weak, forked, starter, or ambiguous repos unless they are explicitly marked as approved in the evidence source.',
+        '- If a technology appears only as ambiguous evidence, omit it or flag it for review instead of claiming it.',
+        '',
+      ].join('\n')
+    : '';
 
-  // Future extension point: live GitHub repo evidence could be fetched here before prompt assembly.
   const user = [
     `# Material Request`,
     '',
@@ -145,6 +164,7 @@ function buildMaterialPrompt({ type, request, context, match, jdText, sourceText
     '',
     sourceTexts.rules,
     '',
+    githubEvidence,
     voice,
     '# Cached Job Description',
     '',
@@ -475,6 +495,7 @@ const sourceTexts = {
   cv: readText(cvPath),
   profile: readText(profilePath),
   rules: readText(rulesPath),
+  githubEvidence: readText(githubEvidencePath),
   voiceDna: readText(voiceDnaPath),
 };
 const guideText = readText(materialsGuidePath);

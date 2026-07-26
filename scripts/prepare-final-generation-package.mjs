@@ -14,6 +14,7 @@ const outputDir = args.outputDir || 'output/final-generation-packages';
 const cvPath = args.cv || process.env.CAREER_OPS_CV || 'private/cv.md';
 const profilePath = args.profile || process.env.CAREER_OPS_PROFILE || 'private/config/profile.yml';
 const rulesPath = args.rules || process.env.CAREER_OPS_RESUME_RULES || 'private/config/resume_rules.yml';
+const githubEvidencePath = args.githubEvidence || process.env.CAREER_OPS_GITHUB_EVIDENCE || 'private/config/github_evidence.yml';
 const jdPath = args.jd || defaultJdPath(jobId);
 const contextPath = args.context || defaultContextPath(jobId);
 const guidePath = args.guide || 'docs/materials-generation.md';
@@ -119,6 +120,7 @@ function finalInstructions(materialType) {
     '- At least 5 bullets should be role-specific or materially rewritten.',
     '- Prioritize role-relevant discovery, demos, implementation, AI workflows, Salesforce, ServiceNow, SQL, APIs, dashboards, stakeholder alignment, technical enablement, customer workflows, and ROI when supported.',
     '- Selected Projects must only use real public GitHub evidence from purraxis repos; feature career-ops-ai-job-scanner prominently when a projects section is included.',
+    '- Use only technologies and project claims evidenced in the GitHub Evidence YAML. Do not use skipped, weak, forked, starter, or ambiguous repos unless explicitly marked as approved.',
     '- Default to one page and prepare final content for PDF rendering.',
   ].join('\n');
 }
@@ -146,6 +148,7 @@ const sources = [
   requiredSource('master cv', cvPath),
   requiredSource('profile', profilePath),
   requiredSource('resume rules', rulesPath),
+  optionalSource('github evidence', githubEvidencePath),
   requiredSource('cached job description', jdPath),
   requiredSource('career context match', contextPath),
   optionalSource('materials generation guide', guidePath),
@@ -186,6 +189,11 @@ const manifest = {
       content_budget: rules.content_budget || {},
       project_source_rules: rules.project_source_rules || {},
     },
+    github_evidence: {
+      path: githubEvidencePath,
+      exists: existsSync(githubEvidencePath),
+      flagship_repo: 'career-ops-ai-job-scanner',
+    },
     matched_sections: summarizeContext(match),
   },
 };
@@ -215,6 +223,7 @@ const packageMarkdown = [
   fenced('Master CV', readText(cvPath)),
   fenced('Structured Profile YAML', readText(profilePath)),
   fenced('Resume Rules YAML', readText(rulesPath)),
+  fenced('GitHub Evidence YAML', readText(githubEvidencePath)),
   fenced('Materials Generation Guide', readText(guidePath)),
   fenced('Voice DNA', readText(voicePath)),
   fenced('Article Digest / Proof Points', readText(articleDigestPath)),

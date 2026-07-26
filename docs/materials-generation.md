@@ -10,6 +10,7 @@ When generating a tailored resume for Dinh Pham inside the Career Ops AI Job Sca
 - `private/cv.md` as the master factual career database
 - `private/config/profile.yml` for structured positioning, preferences, sponsorship context, and proof points
 - `private/config/resume_rules.yml` for length, spacing, section limits, and formatting
+- `private/config/github_evidence.yml` for evidenced GitHub projects, tech stacks, skipped repos, and claimable project details
 - Golden resume wording or structure, when available
 
 Goal: create a one-page, ATS-readable, job-description-matched resume that is meaningfully tailored to the specific role.
@@ -20,6 +21,7 @@ Source-of-truth rules:
 - Use the golden resume as the source of truth for concise wording, titles, dates, and one-page positioning.
 - Use `private/config/profile.yml` for role preferences, target positioning, sponsorship context, and proof points.
 - Use `private/config/resume_rules.yml` for length, spacing, section limits, and formatting.
+- Use `private/config/github_evidence.yml` as the source of truth for Selected Projects and GitHub-backed technologies.
 - Do not invent facts, tools, employers, credentials, certifications, dates, metrics, or responsibilities.
 - If a job description asks for something unsupported, bridge only with truthful adjacent experience.
 
@@ -35,6 +37,7 @@ Project evidence rules:
 
 - Populate Selected Projects only from actual public GitHub repositories under [purraxis](https://github.com/purraxis).
 - Treat [purraxis/career-ops-ai-job-scanner](https://github.com/purraxis/career-ops-ai-job-scanner) as the flagship project and feature it prominently whenever a Selected Projects section is included, unless explicitly told otherwise.
+- Use the configured GitHub evidence source (`CAREER_OPS_GITHUB_EVIDENCE`, default `private/config/github_evidence.yml`) instead of relying on memory or profile summaries.
 - Before writing or editing a resume, review the relevant repo README, file structure, package manifests or dependencies, and source layout.
 - Use only evidenced technologies, architecture, and functionality. Do not guess at libraries, tools, or implementation details.
 - Write project bullets around real functionality, the problem solved, and notable technical decisions.
