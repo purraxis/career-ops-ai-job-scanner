@@ -350,6 +350,8 @@ const server = createServer(async (req, res) => {
         '--job-id', jobId,
         '--jd', job.jd_cache_path || jobDescriptionPath(job),
         '--output', job.context_match_path || contextMatchPath(job),
+        '--company', job.company || '',
+        '--title', job.title || '',
       ]);
       await rebuildAppState();
       let parsed = null;
