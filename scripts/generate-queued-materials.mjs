@@ -17,6 +17,51 @@ const rulesPath = process.env.CAREER_OPS_RESUME_RULES || 'private/config/resume_
 const requiredPrivateSources = [cvPath, profilePath, rulesPath];
 const header = ['timestamp', 'type', 'job_id', 'company', 'title', 'url', 'status', 'jd_cache_path', 'output_path'];
 
+const laneProfiles = {
+  sales_engineering: {
+    label: 'sales engineering and technical GTM',
+    summary_focus: 'technical discovery, product demos, customer pain mapping, ROI framing, and stakeholder enablement',
+    competencies: ['Discovery', 'Product Demos', 'Technical Sales', 'Proof of Value', 'ROI Framing', 'Stakeholder Enablement'],
+    evidence_heading: 'Sales Engineering Evidence',
+    letter_focus: 'technical discovery, demos, and value-focused conversations with customer stakeholders',
+  },
+  solutions_engineering: {
+    label: 'solutions engineering and customer-facing technical implementation',
+    summary_focus: 'customer workflows, integrations, APIs, implementation planning, technical enablement, and business outcome translation',
+    competencies: ['Customer Workflows', 'API/Integration Thinking', 'Implementation Planning', 'Requirements Translation', 'Technical Enablement'],
+    evidence_heading: 'Solutions Engineering Evidence',
+    letter_focus: 'mapping customer problems into practical technical solutions and implementation paths',
+  },
+  ai_fde: {
+    label: 'AI workflows and forward-deployed solution work',
+    summary_focus: 'AI workflow design, automation, technical prototyping, ambiguous problem solving, and customer deployment support',
+    competencies: ['AI Workflows', 'Automation', 'Technical Prototyping', 'Agentic Systems', 'Model Evaluation', 'Customer Deployment'],
+    evidence_heading: 'AI/FDE Evidence',
+    letter_focus: 'building practical AI workflows and turning ambiguous customer requirements into working systems',
+  },
+  customer_success: {
+    label: 'technical customer success and adoption',
+    summary_focus: 'customer adoption, technical support workflows, enablement, troubleshooting, training, and measurable customer outcomes',
+    competencies: ['Customer Adoption', 'Technical Support', 'Enablement', 'Troubleshooting', 'Training', 'Customer Outcomes'],
+    evidence_heading: 'Technical Customer Success Evidence',
+    letter_focus: 'helping customers adopt technical products through clear enablement, support, and workflow improvement',
+  },
+  implementation: {
+    label: 'implementation and professional services',
+    summary_focus: 'requirements gathering, process mapping, onboarding, Salesforce, ServiceNow, configuration support, and deployment readiness',
+    competencies: ['Implementation', 'Requirements Gathering', 'Process Mapping', 'Onboarding', 'Salesforce', 'ServiceNow', 'Technical Documentation'],
+    evidence_heading: 'Implementation Evidence',
+    letter_focus: 'requirements gathering, workflow mapping, onboarding, and practical implementation support',
+  },
+  general_technical_gtm: {
+    label: 'customer-facing technical solutions',
+    summary_focus: 'technical problem solving, workflow improvement, enablement, implementation support, and stakeholder communication',
+    competencies: ['Technical Problem Solving', 'Workflow Improvement', 'Stakeholder Communication', 'Enablement', 'Implementation Support'],
+    evidence_heading: 'Role-Matched Evidence',
+    letter_focus: 'technical problem solving, workflow improvement, and clear customer-facing communication',
+  },
+};
+
 function parseArgs(argv) {
   const parsed = {};
   for (let i = 0; i < argv.length; i++) {
@@ -116,6 +161,34 @@ function extractJdTerms(jdText) {
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 18).map(([term]) => term);
 }
 
+function dedupe(values) {
+  const seen = new Set();
+  const out = [];
+  for (const value of values) {
+    const cleaned = cleanLine(value);
+    const key = cleaned.toLowerCase();
+    if (!cleaned || seen.has(key)) continue;
+    seen.add(key);
+    out.push(cleaned);
+  }
+  return out;
+}
+
+function laneProfile(match, request, terms) {
+  const laneId = match.role_lane || inferLaneId(request, terms);
+  return laneProfiles[laneId] || laneProfiles.general_technical_gtm;
+}
+
+function inferLaneId(request, terms) {
+  const haystack = `${request.title} ${terms.join(' ')}`.toLowerCase();
+  if (haystack.includes('implementation') || haystack.includes('onboarding')) return 'implementation';
+  if (haystack.includes('forward') || haystack.includes('deployed') || haystack.includes('agent') || haystack.includes(' ai ')) return 'ai_fde';
+  if (haystack.includes('customer success') || haystack.includes('technical success')) return 'customer_success';
+  if (haystack.includes('sales engineer') || haystack.includes('presales') || haystack.includes('pre-sales')) return 'sales_engineering';
+  if (haystack.includes('solutions') || haystack.includes('solution consultant') || haystack.includes('customer engineer')) return 'solutions_engineering';
+  return 'general_technical_gtm';
+}
+
 function topBullets(match, limit = 8) {
   const bullets = [];
   for (const section of match.sections || []) {
@@ -138,25 +211,29 @@ function topSections(match, limit = 5) {
     }));
 }
 
-function inferLane(request, terms) {
-  const haystack = `${request.title} ${terms.join(' ')}`.toLowerCase();
-  if (haystack.includes('implementation') || haystack.includes('onboarding')) return 'implementation and customer onboarding';
-  if (haystack.includes('forward') || haystack.includes('deployed') || haystack.includes('ai')) return 'AI workflow and forward-deployed solution work';
-  if (haystack.includes('sales') || haystack.includes('solutions') || haystack.includes('presales')) return 'solutions engineering and technical GTM';
-  if (haystack.includes('customer success') || haystack.includes('technical success')) return 'technical customer success';
-  return 'customer-facing technical solutions';
+function buildCompetencies(context, profile, match, terms, profileForLane) {
+  const contextSkills = context.sections?.skills?.flatMap(section => section.bullets || []) || [];
+  const profileSkills = [
+    ...Object.values(profile.skills || {}).flatMap(value => Array.isArray(value) ? value : []),
+    ...Object.values(profile.role_keywords || {}).flatMap(value => Array.isArray(value) ? value : []),
+  ];
+  const laneTerms = match.role_lane_signals || [];
+  return dedupe([
+    ...profileForLane.competencies,
+    ...laneTerms,
+    ...terms.slice(0, 8),
+    ...profileSkills.slice(0, 12),
+    ...contextSkills,
+  ]).slice(0, 28).join(' | ');
 }
 
 function buildResumeDraft(request, profile, context, match, jdText) {
   const contact = candidateContact(profile);
   const terms = extractJdTerms(jdText);
-  const lane = inferLane(request, terms);
+  const lane = laneProfile(match, request, terms);
   const bullets = topBullets(match, 8);
   const sections = topSections(match, 4);
-  const skills = [
-    ...(context.sections?.skills?.[0]?.bullets || []),
-    terms.join(' | '),
-  ].filter(Boolean).join(' | ');
+  const skills = buildCompetencies(context, profile, match, terms, lane);
   const education = truncate(context.sections?.education?.[0]?.text || '', 420);
 
   return [
@@ -166,7 +243,7 @@ function buildResumeDraft(request, profile, context, match, jdText) {
     '',
     '## Professional Summary',
     '',
-    `${contact.name} is a computer science candidate focused on ${lane}, with experience translating business needs into AI automation, enterprise workflows, dashboards, enablement, and stakeholder support outcomes.`,
+    `${contact.name} is a computer science candidate focused on ${lane.label}, with experience across ${lane.summary_focus}.`,
     '',
     '## Core Competencies',
     '',
@@ -176,7 +253,7 @@ function buildResumeDraft(request, profile, context, match, jdText) {
     '',
     ...(bullets.length ? bullets.map(bullet => `- ${bullet}`) : ['- Add role-specific bullets from the private career source after reviewing the cached job description.']),
     '',
-    '## Selected Evidence For This Role',
+    `## ${lane.evidence_heading}`,
     '',
     ...sections.map(section => `- ${section.title}${section.terms ? `: ${section.terms}` : ''}`),
     '',
@@ -190,7 +267,7 @@ function buildResumeDraft(request, profile, context, match, jdText) {
 function buildLetterDraft(request, profile, match, jdText) {
   const contact = candidateContact(profile);
   const terms = extractJdTerms(jdText);
-  const lane = inferLane(request, terms);
+  const lane = laneProfile(match, request, terms);
   const bullets = topBullets(match, 3);
   const proof = bullets.length
     ? bullets.slice(0, 2).join(' ')
@@ -199,7 +276,7 @@ function buildLetterDraft(request, profile, match, jdText) {
   return [
     `Dear ${request.company ? `${request.company} Hiring Team` : 'Hiring Team'},`,
     '',
-    `I am interested in the ${request.title || 'open role'} at ${request.company || 'your company'} because it sits close to the kind of ${lane} work I am targeting: technical discovery, practical implementation, and clear communication with stakeholders.`,
+    `I am interested in the ${request.title || 'open role'} at ${request.company || 'your company'} because it sits close to the kind of ${lane.label} work I am targeting: ${lane.letter_focus}.`,
     '',
     `${proof} I would bring that same mix of technical execution and customer-aware communication to this role, especially where the work involves understanding workflows, explaining tradeoffs, and helping teams adopt better systems.`,
     '',

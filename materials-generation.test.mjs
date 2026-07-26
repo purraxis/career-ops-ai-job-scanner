@@ -159,6 +159,10 @@ function rowByJobId(queuePath, jobId) {
   return rows.find(row => row.job_id === jobId);
 }
 
+function markdownPathForOutput(outputPath) {
+  return outputPath.replace(/\.(pdf|html)$/, '.md');
+}
+
 {
   const root = tmpDir('materials-missing-sources');
   const { contextPath, jdPath } = writeFixtureSources(root);
@@ -186,6 +190,102 @@ function rowByJobId(queuePath, jobId) {
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.equal(rowByJobId(queuePath, 'missing-sources-job').status, 'blocked_missing_private_sources');
+  passed += 1;
+}
+
+{
+  const root = tmpDir('materials-lane-aware');
+  const { profilePath, cvPath, rulesPath, contextPath } = writeFixtureSources(root);
+  const queuePath = path.join(root, 'queue.tsv');
+  const outputDir = path.join(root, 'output');
+  const dataDir = path.join(root, 'data');
+  const jdDir = path.join(dataDir, 'job-descriptions');
+  const matchDir = path.join(dataDir, 'context-matches');
+  const salesJdPath = path.join(jdDir, 'sales-job.md');
+  const fdeJdPath = path.join(jdDir, 'fde-job.md');
+
+  writeFileSync(salesJdPath, [
+    '# Sales Engineer',
+    '',
+    '## Extracted Text',
+    '',
+    'Sales Engineer role focused on discovery, demos, technical sales, proof of value, stakeholders, and ROI.',
+    '',
+  ].join('\n'), 'utf8');
+  writeFileSync(fdeJdPath, [
+    '# Forward Deployed Engineer',
+    '',
+    '## Extracted Text',
+    '',
+    'Forward Deployed Engineer role focused on AI workflows, agents, automation, customer deployment, and technical prototyping.',
+    '',
+  ].join('\n'), 'utf8');
+  writeFileSync(path.join(matchDir, 'sales-job.json'), JSON.stringify({
+    role_lane: 'sales_engineering',
+    role_lane_signals: ['sales engineer', 'discovery', 'demo', 'roi'],
+    sections: [{
+      title: 'Sales Engineering Evidence',
+      group: 'experience',
+      matched_terms: ['discovery', 'demos', 'roi'],
+      lane_matched_terms: ['discovery', 'demo', 'roi'],
+      top_bullets: [
+        { bullet: 'Led discovery conversations, product demos, stakeholder enablement, and ROI-oriented business cases for technical sales workflows.' },
+        { bullet: 'Translated customer pain points into proof-of-value narratives and demo recommendations.' },
+      ],
+    }],
+  }, null, 2), 'utf8');
+  writeFileSync(path.join(matchDir, 'fde-job.json'), JSON.stringify({
+    role_lane: 'ai_fde',
+    role_lane_signals: ['forward deployed', 'ai workflow', 'automation'],
+    sections: [{
+      title: 'AI FDE Project Evidence',
+      group: 'projects',
+      matched_terms: ['ai', 'workflow', 'automation'],
+      lane_matched_terms: ['career ops', 'technical prototyping', 'automation'],
+      top_bullets: [
+        { bullet: 'Built a Career Ops job scanner project around AI workflows, agent-style automation, technical prototyping, and auditable outputs.' },
+        { bullet: 'Turned ambiguous workflow requirements into a working automation prototype with clear operating constraints.' },
+      ],
+    }],
+  }, null, 2), 'utf8');
+  writeQueue(queuePath, [
+    {
+      timestamp: '2026-07-25T00:00:00.000Z',
+      type: 'resume',
+      job_id: 'sales-job',
+      company: 'Example',
+      title: 'Sales Engineer',
+      url: 'https://example.test/sales',
+      status: 'pending',
+      jd_cache_path: salesJdPath,
+    },
+    {
+      timestamp: '2026-07-25T00:00:01.000Z',
+      type: 'resume',
+      job_id: 'fde-job',
+      company: 'Example',
+      title: 'Forward Deployed Engineer',
+      url: 'https://example.test/fde',
+      status: 'pending',
+      jd_cache_path: fdeJdPath,
+    },
+  ]);
+
+  const result = runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, rulesPath });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const salesRow = rowByJobId(queuePath, 'sales-job');
+  const fdeRow = rowByJobId(queuePath, 'fde-job');
+  const salesMarkdown = readFileSync(markdownPathForOutput(salesRow.output_path), 'utf8');
+  const fdeMarkdown = readFileSync(markdownPathForOutput(fdeRow.output_path), 'utf8');
+
+  assert.ok(salesMarkdown.includes('sales engineering and technical GTM'));
+  assert.ok(salesMarkdown.includes('## Sales Engineering Evidence'));
+  assert.ok(salesMarkdown.includes('Discovery | Product Demos | Technical Sales'));
+  assert.ok(fdeMarkdown.includes('AI workflows and forward-deployed solution work'));
+  assert.ok(fdeMarkdown.includes('## AI/FDE Evidence'));
+  assert.ok(fdeMarkdown.includes('AI Workflows | Automation | Technical Prototyping'));
+  assert.notEqual(salesMarkdown, fdeMarkdown);
   passed += 1;
 }
 
