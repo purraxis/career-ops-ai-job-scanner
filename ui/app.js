@@ -100,7 +100,7 @@ const viewConfig = {
 };
 
 const jobViews = new Set(Object.keys(viewConfig));
-const handledActions = new Set(['moved_to_pipeline', 'rejected_by_user', 'applied']);
+const handledActions = new Set(['moved_to_pipeline', 'rejected_by_user', 'not_a_fit', 'applied']);
 
 async function requestJson(url, options = {}) {
   const res = await fetch(url, {
@@ -351,7 +351,7 @@ function runOptimisticAction(item, button, pendingText, requestFn, successMessag
 }
 
 async function logJobAction(action, item, button, note = '') {
-  if (['applied', 'rejected_by_user'].includes(action) && item?.id) {
+  if (['applied', 'rejected_by_user', 'not_a_fit'].includes(action) && item?.id) {
     runOptimisticAction(
       item,
       button,
@@ -360,7 +360,11 @@ async function logJobAction(action, item, button, note = '') {
         method: 'POST',
         body: JSON.stringify({ action, job: item, note }),
       }),
-      action === 'applied' ? 'Marked applied.' : 'Rejected.',
+      {
+        applied: 'Marked applied.',
+        rejected_by_user: 'Rejected.',
+        not_a_fit: 'Marked not a fit.',
+      }[action] || 'Action saved.',
     );
     return;
   }
@@ -525,6 +529,7 @@ function actionLabel(action) {
     moved_to_pipeline: 'Moved to pipeline',
     move_to_pipeline_skipped: 'Already in pipeline',
     rejected_by_user: 'Rejected by user',
+    not_a_fit: 'Not a fit',
     applied: 'Marked applied',
     saved_for_later: 'Saved for later',
   }[action] || action;
@@ -591,7 +596,7 @@ function filteredItems() {
   return itemsForView()
     .filter(item => !hidden.has(item.id))
     .filter(item => els.showHandled.checked || currentView !== 'all_review' || !isHandled(item))
-    .filter(item => els.showHandled.checked || currentView !== 'all_pipeline' || (!item.is_applied && !item.is_rejected_by_user))
+    .filter(item => els.showHandled.checked || currentView !== 'all_pipeline' || (!item.is_applied && !item.is_rejected_by_user && !item.is_not_a_fit))
     .filter(item => !query || searchableText(item).includes(query))
     .filter(item => !provider || providerValue(item) === provider)
     .filter(item => !reason || primaryReason(item) === reason)
@@ -822,15 +827,17 @@ function renderDetail(item) {
   open.textContent = 'Open Job';
   actions.append(open);
 
-  if (actionContext === 'review' && !item.is_moved_to_pipeline && !item.is_rejected_by_user) {
+  if (actionContext === 'review' && !item.is_moved_to_pipeline && !item.is_rejected_by_user && !item.is_not_a_fit) {
     actions.append(
       makeButton('Move to Pipeline', 'primary', button => moveToPipeline(item, button)),
+      makeButton('Not a Fit', 'secondary', button => logJobAction('not_a_fit', item, button, 'Marked not a fit from dashboard review')),
       makeButton('Reject', 'danger', button => logJobAction('rejected_by_user', item, button, 'Rejected from dashboard review')),
     );
   }
-  if (actionContext === 'pipeline' && !item.is_applied && !item.is_rejected_by_user) {
+  if (actionContext === 'pipeline' && !item.is_applied && !item.is_rejected_by_user && !item.is_not_a_fit) {
     actions.append(
       makeButton('Mark Applied', 'primary', button => logJobAction('applied', item, button, 'Marked applied from dashboard')),
+      makeButton('Not a Fit', 'secondary', button => logJobAction('not_a_fit', item, button, 'Marked not a fit from dashboard pipeline')),
       makeButton('Reject', 'danger', button => logJobAction('rejected_by_user', item, button, 'Rejected from dashboard pipeline')),
     );
   }

@@ -283,13 +283,15 @@ function applyActionState(items, actionsById) {
     const action = latestAction?.action || '';
     const isApplied = action === 'applied';
     const isRejectedByUser = action === 'rejected_by_user';
+    const isNotAFit = action === 'not_a_fit';
     const isMovedToPipeline = action === 'moved_to_pipeline' || action === 'move_to_pipeline_skipped';
     return {
       ...item,
       latest_action: latestAction,
-      is_handled: Boolean(latestAction && ['applied', 'rejected_by_user', 'moved_to_pipeline', 'move_to_pipeline_skipped'].includes(action)),
+      is_handled: Boolean(latestAction && ['applied', 'rejected_by_user', 'not_a_fit', 'moved_to_pipeline', 'move_to_pipeline_skipped'].includes(action)),
       is_applied: isApplied,
       is_rejected_by_user: isRejectedByUser,
+      is_not_a_fit: isNotAFit,
       is_moved_to_pipeline: isMovedToPipeline,
     };
   });
@@ -408,14 +410,15 @@ const enrichedGenerationRequests = generationRequests.map(request => {
 });
 const today = new Date().toISOString().slice(0, 10);
 const queues = {
-  active_review: actionedNeedsReview.filter(item => !item.is_moved_to_pipeline && !item.is_rejected_by_user),
-  handled_review: actionedNeedsReview.filter(item => item.is_moved_to_pipeline || item.is_rejected_by_user),
-  active_pipeline: actionedPipeline.filter(item => !item.is_applied && !item.is_rejected_by_user),
+  active_review: actionedNeedsReview.filter(item => !item.is_moved_to_pipeline && !item.is_rejected_by_user && !item.is_not_a_fit),
+  handled_review: actionedNeedsReview.filter(item => item.is_moved_to_pipeline || item.is_rejected_by_user || item.is_not_a_fit),
+  active_pipeline: actionedPipeline.filter(item => !item.is_applied && !item.is_rejected_by_user && !item.is_not_a_fit),
   applied: actionedPipeline.filter(item => item.is_applied),
   apply_today: actionedPipeline.filter(item => {
     const action = item.latest_action;
     return !item.is_applied
       && !item.is_rejected_by_user
+      && !item.is_not_a_fit
       && action?.action === 'moved_to_pipeline'
       && action.timestamp?.slice(0, 10) === today;
   }),

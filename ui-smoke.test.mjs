@@ -81,7 +81,11 @@ function writeFixtureRepo(root) {
     '',
   ].join('\n'), 'utf8');
 
-  writeFileSync(path.join(root, 'data/job-actions.tsv'), 'timestamp\taction\tjob_id\tcompany\ttitle\turl\tnote\n', 'utf8');
+  writeFileSync(path.join(root, 'data/job-actions.tsv'), [
+    'timestamp\taction\tjob_id\tcompany\ttitle\turl\tnote',
+    '2026-07-25T01:00:00.000Z\tnot_a_fit\texample.test|/jobs/associate-solutions-consultant\tExample Co\tAssociate Solutions Consultant\thttps://example.test/jobs/associate-solutions-consultant\tMarked not a fit from fixture',
+    '',
+  ].join('\n'), 'utf8');
   writeFileSync(path.join(root, 'data/job-descriptions/example-job.md'), [
     '# Example Job',
     '',
@@ -286,8 +290,13 @@ async function main() {
     assert.equal(state.schema_version, 1);
     assert.equal(state.stats.pipeline_count, 1);
     assert.equal(state.stats.needs_review_count, 1);
+    assert.equal(state.stats.active_review_count, 0);
+    assert.equal(state.stats.handled_review_count, 1);
     assert.equal(state.stats.pending_generation_requests_count, 0);
     assert.equal(state.stats.generated_pdf_count, 1);
+    assert.equal(state.queues.active_review.length, 0);
+    assert.equal(state.queues.handled_review[0].is_not_a_fit, true);
+    assert.equal(state.queues.handled_review[0].latest_action.action, 'not_a_fit');
     assert.equal(state.generation_requests[0].output_exists, true);
     assert.equal(state.generation_requests[0].html_exists, true);
     assert.equal(state.generation_requests[0].markdown_exists, true);
