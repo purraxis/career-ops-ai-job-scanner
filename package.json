@@ -19,7 +19,7 @@
     "ui": "node scripts/serve-ui.mjs",
     "ui:lan": "CAREER_OPS_UI_HOST=0.0.0.0 node scripts/serve-ui.mjs",
     "validate:portals": "node validate-portals.mjs",
-    "test": "node --check scan.mjs && node --check providers/jooble.mjs && node ats-provider.test.mjs && node requirements-safeguard.test.mjs && node jooble-provider.test.mjs && node live-verification.test.mjs && node verification-classification.test.mjs"
+    "test": "node --check scan.mjs && node --check providers/jooble.mjs && node --check scripts/generate-queued-materials.mjs && node ats-provider.test.mjs && node requirements-safeguard.test.mjs && node jooble-provider.test.mjs && node live-verification.test.mjs && node verification-classification.test.mjs && node materials-generation.test.mjs"
   },
   "keywords": [
     "job-search",
