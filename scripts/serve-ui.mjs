@@ -14,6 +14,11 @@ const PIPELINE_PATH = join(ROOT, 'data/pipeline.md');
 const UI_STATE_PATH = join(ROOT, 'data/ui-state.json');
 const JOB_ACTIONS_PATH = join(ROOT, 'data/job-actions.tsv');
 const GENERATION_REQUESTS_PATH = join(ROOT, 'data/generation-requests.tsv');
+const FILE_ROOTS = [
+  join(ROOT, 'output'),
+  join(ROOT, 'data/job-descriptions'),
+  join(ROOT, 'data/context-matches'),
+];
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -208,10 +213,33 @@ function serveStatic(req, res) {
   send(res, 200, readFileSync(filePath), MIME[extname(filePath)] || 'application/octet-stream');
 }
 
+function safeLocalFilePath(value) {
+  const normalized = normalize(join(ROOT, String(value || '')));
+  return FILE_ROOTS.some(root => normalized === root || normalized.startsWith(`${root}/`))
+    ? normalized
+    : '';
+}
+
+function serveLocalFile(req, res) {
+  const url = new URL(req.url, 'http://127.0.0.1');
+  const requestedPath = url.searchParams.get('path') || '';
+  const filePath = safeLocalFilePath(requestedPath);
+  if (!filePath || !existsSync(filePath)) {
+    send(res, 404, 'Not found', 'text/plain; charset=utf-8');
+    return;
+  }
+  send(res, 200, readFileSync(filePath), MIME[extname(filePath)] || 'application/octet-stream');
+}
+
 const server = createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && req.url === '/api/state') {
       send(res, 200, ensureUiState());
+      return;
+    }
+
+    if (req.method === 'GET' && req.url.startsWith('/api/local-file')) {
+      serveLocalFile(req, res);
       return;
     }
 

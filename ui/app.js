@@ -578,6 +578,22 @@ function appendBadges(parent, item, latestAction) {
   parent.append(badges);
 }
 
+function localFileHref(filePath) {
+  return `/api/local-file?path=${encodeURIComponent(filePath)}`;
+}
+
+function localFileLink(label, filePath, exists) {
+  if (!filePath) return null;
+  const link = document.createElement('a');
+  link.href = exists ? localFileHref(filePath) : '#';
+  link.target = '_blank';
+  link.rel = 'noreferrer';
+  link.textContent = exists ? label : `${label} missing`;
+  link.className = exists ? '' : 'disabled-link';
+  if (!exists) link.setAttribute('aria-disabled', 'true');
+  return link;
+}
+
 function addMetric(parent, label, value) {
   const card = document.createElement('article');
   card.className = 'metric-card';
@@ -713,11 +729,17 @@ function renderGenerationQueue() {
       open.textContent = 'Open Job';
       actions.append(open);
     }
-    if (request.output_path) {
-      const output = document.createElement('span');
-      output.textContent = request.output_path;
-      actions.append(output);
+    const materialLinks = document.createElement('div');
+    materialLinks.className = 'material-links';
+    for (const link of [
+      localFileLink('Open PDF', request.output_path, request.output_exists),
+      localFileLink('Open HTML', request.html_path, request.html_exists),
+      localFileLink('Open Markdown', request.markdown_path, request.markdown_exists),
+      localFileLink('Open Validation', request.validation_path, request.validation_exists),
+    ].filter(Boolean)) {
+      materialLinks.append(link);
     }
+    if (materialLinks.children.length) actions.append(materialLinks);
     if (!request.jd_cached) {
       actions.append(makeButton('Cache JD', 'secondary', button => cacheJobDescription(request, button)));
     }
@@ -729,6 +751,12 @@ function renderGenerationQueue() {
       issues.className = 'request-issues';
       issues.textContent = request.validation.issues.join(' | ');
       main.append(issues);
+    }
+    if (request.output_path) {
+      const outputPath = document.createElement('p');
+      outputPath.className = 'material-path';
+      outputPath.textContent = request.output_path;
+      main.append(outputPath);
     }
     row.append(main, actions);
     els.generationContent.append(row);

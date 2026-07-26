@@ -310,6 +310,12 @@ function validationPathForOutput(outputPath) {
     : '';
 }
 
+function siblingPath(outputPath, extension) {
+  return outputPath && outputPath.endsWith('.pdf')
+    ? outputPath.replace(/\.pdf$/, extension)
+    : '';
+}
+
 function countBy(items, key) {
   return items.reduce((acc, item) => {
     const value = item[key] || 'unknown';
@@ -358,6 +364,8 @@ const enrichedGenerationRequests = generationRequests.map(request => {
   });
   const validationPath = validationPathForOutput(request.output_path);
   const validation = validationPath ? readJson(validationPath) : null;
+  const htmlPath = siblingPath(request.output_path, '.html');
+  const markdownPath = siblingPath(request.output_path, '.md');
   return {
     ...request,
     jd_cache_path: jdCachePath,
@@ -365,6 +373,10 @@ const enrichedGenerationRequests = generationRequests.map(request => {
     context_match_path: matchPath,
     context_matched: existsSync(matchPath),
     output_exists: Boolean(request.output_path && existsSync(request.output_path)),
+    html_path: htmlPath,
+    html_exists: Boolean(htmlPath && existsSync(htmlPath)),
+    markdown_path: markdownPath,
+    markdown_exists: Boolean(markdownPath && existsSync(markdownPath)),
     validation_path: validationPath,
     validation_exists: Boolean(validationPath && existsSync(validationPath)),
     validation,

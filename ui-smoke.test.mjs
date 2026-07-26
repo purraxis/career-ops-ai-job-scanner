@@ -37,6 +37,7 @@ function writeFixtureRepo(root) {
 
   mkdirSync(path.join(root, 'data'), { recursive: true });
   mkdirSync(path.join(root, 'private/config'), { recursive: true });
+  mkdirSync(path.join(root, 'output/generated-materials/example-job'), { recursive: true });
   if (existsSync(path.join(repoRoot, 'node_modules'))) {
     symlinkSync(path.join(repoRoot, 'node_modules'), path.join(root, 'node_modules'), 'dir');
   }
@@ -80,9 +81,19 @@ function writeFixtureRepo(root) {
   writeFileSync(path.join(root, 'data/job-actions.tsv'), 'timestamp\taction\tjob_id\tcompany\ttitle\turl\tnote\n', 'utf8');
   writeFileSync(path.join(root, 'data/generation-requests.tsv'), [
     'timestamp\ttype\tjob_id\tcompany\ttitle\turl\tstatus\tjd_cache_path\toutput_path',
-    '2026-07-25T00:00:00.000Z\tresume\texample-job\tExample Co\tSolutions Engineer\thttps://example.test/jobs/solutions-engineer\tpending\tdata/job-descriptions/example-job.md\t',
+    '2026-07-25T00:00:00.000Z\tresume\texample-job\tExample Co\tSolutions Engineer\thttps://example.test/jobs/solutions-engineer\tgenerated_pdf\tdata/job-descriptions/example-job.md\toutput/generated-materials/example-job/example-resume.pdf',
     '',
   ].join('\n'), 'utf8');
+
+  writeFileSync(path.join(root, 'output/generated-materials/example-job/example-resume.pdf'), 'fixture pdf bytes\n', 'utf8');
+  writeFileSync(path.join(root, 'output/generated-materials/example-job/example-resume.html'), '<!doctype html><title>Fixture</title>\n', 'utf8');
+  writeFileSync(path.join(root, 'output/generated-materials/example-job/example-resume.md'), '# Fixture Resume\n', 'utf8');
+  writeFileSync(path.join(root, 'output/generated-materials/example-job/example-resume.validation.json'), JSON.stringify({
+    passed: true,
+    pages: 1,
+    words: 240,
+    issues: [],
+  }, null, 2), 'utf8');
 
   writeFileSync(path.join(root, 'portals.yml'), [
     'tracked_companies:',
@@ -241,7 +252,16 @@ async function main() {
     assert.equal(state.schema_version, 1);
     assert.equal(state.stats.pipeline_count, 1);
     assert.equal(state.stats.needs_review_count, 1);
-    assert.equal(state.stats.pending_generation_requests_count, 1);
+    assert.equal(state.stats.pending_generation_requests_count, 0);
+    assert.equal(state.stats.generated_pdf_count, 1);
+    assert.equal(state.generation_requests[0].output_exists, true);
+    assert.equal(state.generation_requests[0].html_exists, true);
+    assert.equal(state.generation_requests[0].markdown_exists, true);
+    assert.equal(state.generation_requests[0].validation_exists, true);
+
+    const localFile = await request(port, 'GET', '/api/local-file?path=output%2Fgenerated-materials%2Fexample-job%2Fexample-resume.html');
+    assert.equal(localFile.status, 200);
+    assert.ok(localFile.body.includes('<!doctype html>'));
 
     const runResponse = await request(port, 'POST', '/api/generate-queued-materials', '{}');
     assert.equal(runResponse.status, 200);

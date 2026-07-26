@@ -180,6 +180,8 @@ The dashboard exposes the same deterministic path through `Run Local Generator` 
 
 Each generated PDF receives a `.validation.json` sidecar. Resume requests are expected to render as one page; if validation detects a layout issue, the request status becomes `generated_needs_layout_review` instead of plain generated. If content is too sparse or placeholder-heavy, the request status becomes `generated_needs_content_review`. This local generator is deterministic and token-free. It is a staging layer for review and future LLM generation, not a substitute for final human review. Job descriptions, context matches, and generated materials should stay in ignored local paths such as `data/job-descriptions/`, `data/context-matches/`, and `output/`.
 
+The Generation Queue view acts as the local materials browser. For generated requests, it shows PDF, HTML, Markdown, and validation links when those files exist, plus page/word badges and validation issues. The local file endpoint is constrained to ignored generated/context paths so private outputs can be reviewed in the browser without making them public.
+
 The supporting local adapter files are generated and ignored by git:
 
 - `data/latest-scan-summary.json`

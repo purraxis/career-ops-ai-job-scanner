@@ -536,15 +536,36 @@ p {
   max-width: 520px;
 }
 
+.material-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .request-actions .secondary {
   border-color: var(--border-strong);
   background: var(--panel);
+}
+
+.disabled-link {
+  pointer-events: none;
+  color: var(--muted);
+  background: #edf1f5;
 }
 
 .request-issues {
   margin: 7px 0 0;
   color: var(--danger);
   font-size: 12px;
+}
+
+.material-path {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .request-actions span:not(.status-badge) {
