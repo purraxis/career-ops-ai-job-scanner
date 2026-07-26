@@ -43,7 +43,16 @@ function writeFixtureSources(root) {
   ].join('\n'), 'utf8');
 
   writeFileSync(cvPath, '# Example CV\n\nPublic-safe fixture only.\n', 'utf8');
-  writeFileSync(rulesPath, 'resume:\n  pages: 1\n', 'utf8');
+  writeFileSync(rulesPath, [
+    'resume:',
+    '  pages: 1',
+    'content_quality:',
+    '  min_resume_words: 90',
+    '  min_resume_bullets: 6',
+    '  min_letter_words: 50',
+    '  min_letter_paragraphs: 3',
+    '',
+  ].join('\n'), 'utf8');
 
   writeFileSync(contextPath, JSON.stringify({
     sections: {
@@ -74,6 +83,7 @@ function writeFixtureSources(root) {
         top_bullets: [
           { bullet: 'Built AI workflow support materials that helped business users understand automation tradeoffs and adoption steps.' },
           { bullet: 'Translated stakeholder needs into technical requirements, dashboards, and enablement plans.' },
+          { bullet: 'Connected customer discovery themes to implementation plans, acceptance criteria, and practical enablement materials.' },
         ],
       },
       {
@@ -83,11 +93,13 @@ function writeFixtureSources(root) {
         top_bullets: [
           { bullet: 'Supported implementation planning across enterprise workflow systems and customer-facing support processes.' },
           { bullet: 'Created concise documentation for technical and non-technical stakeholders.' },
+          { bullet: 'Mapped business requirements into repeatable workflows that helped teams reduce ambiguity during adoption.' },
         ],
       },
     ],
   }, null, 2), 'utf8');
   writeFileSync(path.join(matchDir, 'example-job-letter.json'), readFileSync(matchPath, 'utf8'), 'utf8');
+  writeFileSync(path.join(matchDir, 'sparse-job.json'), JSON.stringify({ sections: [] }, null, 2), 'utf8');
 
   return { profilePath, cvPath, rulesPath, contextPath, jdPath, matchPath };
 }
@@ -203,6 +215,16 @@ if (await canLaunchChromium()) {
       status: 'pending',
       jd_cache_path: jdPath,
     },
+    {
+      timestamp: '2026-07-25T00:00:02.000Z',
+      type: 'resume',
+      job_id: 'sparse-job',
+      company: 'Example',
+      title: 'Sparse Resume',
+      url: 'https://example.test/sparse-job',
+      status: 'pending',
+      jd_cache_path: jdPath,
+    },
   ]);
 
   const result = runGenerator({ queuePath, contextPath, outputDir, profilePath, cvPath, rulesPath });
@@ -210,21 +232,31 @@ if (await canLaunchChromium()) {
 
   const resumeRow = rowByJobId(queuePath, 'example-job');
   const letterRow = rowByJobId(queuePath, 'example-job-letter');
+  const sparseRow = rowByJobId(queuePath, 'sparse-job');
   assert.equal(resumeRow.status, 'generated_pdf');
   assert.equal(letterRow.status, 'generated_pdf');
+  assert.equal(sparseRow.status, 'generated_needs_content_review');
   assert.ok(resumeRow.output_path.endsWith('.pdf'));
   assert.ok(letterRow.output_path.endsWith('.pdf'));
+  assert.ok(sparseRow.output_path.endsWith('.pdf'));
   assert.ok(existsSync(resumeRow.output_path), resumeRow.output_path);
   assert.ok(existsSync(letterRow.output_path), letterRow.output_path);
+  assert.ok(existsSync(sparseRow.output_path), sparseRow.output_path);
 
   const resumeValidationPath = resumeRow.output_path.replace(/\.pdf$/, '.validation.json');
   const letterValidationPath = letterRow.output_path.replace(/\.pdf$/, '.validation.json');
+  const sparseValidationPath = sparseRow.output_path.replace(/\.pdf$/, '.validation.json');
   const resumeValidation = JSON.parse(readFileSync(resumeValidationPath, 'utf8'));
   const letterValidation = JSON.parse(readFileSync(letterValidationPath, 'utf8'));
+  const sparseValidation = JSON.parse(readFileSync(sparseValidationPath, 'utf8'));
   assert.equal(resumeValidation.passed, true);
   assert.equal(resumeValidation.pages, 1);
+  assert.deepEqual(resumeValidation.content_issues, []);
   assert.equal(letterValidation.passed, true);
   assert.ok(letterValidation.pages <= 2);
+  assert.equal(sparseValidation.passed, false);
+  assert.ok(sparseValidation.content_issues.some(issue => issue.startsWith('resume_too_few_bullets')));
+  assert.ok(sparseValidation.content_issues.includes('resume_contains_placeholder_text'));
 
   const resumeMarkdown = readFileSync(resumeRow.output_path.replace(/\.pdf$/, '.md'), 'utf8');
   const letterMarkdown = readFileSync(letterRow.output_path.replace(/\.pdf$/, '.md'), 'utf8');

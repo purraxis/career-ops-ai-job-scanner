@@ -332,28 +332,107 @@ function pdfInfo(pdfPath) {
   return { available: true, pages };
 }
 
-function validatePdf(request, pdfPath) {
-  const info = pdfInfo(pdfPath);
+function wordCount(markdown) {
+  return (String(markdown || '')
+    .replace(/^#+\s+/gm, ' ')
+    .replace(/^- /gm, ' ')
+    .match(/\b[\w+#.]+\b/g) || []).length;
+}
+
+function bulletCount(markdown) {
+  return (String(markdown || '').match(/^- /gm) || []).length;
+}
+
+function hasHeading(markdown, heading) {
+  return new RegExp(`^##\\s+${heading}\\s*$`, 'mi').test(markdown);
+}
+
+function paragraphCount(markdown) {
+  return String(markdown || '')
+    .split(/\n{2,}/)
+    .map(block => block.trim())
+    .filter(block => block && !block.startsWith('#') && !block.startsWith('- ')).length;
+}
+
+function validateContent(request, markdown, rules) {
   const issues = [];
+  const words = wordCount(markdown);
+  const bullets = bulletCount(markdown);
+  const layoutRules = rules.layout || {};
+  const contentQuality = rules.content_quality || rules.validation || {};
+
+  if (request.type === 'resume') {
+    const requiredHeadings = [
+      'Professional Summary',
+      'Core Competencies',
+      'Experience Highlights',
+      'Education And Technical Foundation',
+    ];
+    for (const heading of requiredHeadings) {
+      if (!hasHeading(markdown, heading)) issues.push(`resume_missing_section_${safeFileId(heading)}`);
+    }
+
+    const minWords = Number(contentQuality.min_resume_words || 220);
+    const minBullets = Number(contentQuality.min_resume_bullets || 6);
+    const maxWords = Number(layoutRules.max_total_words || 0);
+
+    if (words < minWords) issues.push(`resume_too_sparse_words_${words}_lt_${minWords}`);
+    if (bullets < minBullets) issues.push(`resume_too_few_bullets_${bullets}_lt_${minBullets}`);
+    if (maxWords && words > maxWords) issues.push(`resume_exceeds_word_budget_${words}_gt_${maxWords}`);
+    if (/Add role-specific bullets|See private career source/i.test(markdown)) {
+      issues.push('resume_contains_placeholder_text');
+    }
+  }
+
+  if (request.type === 'letter') {
+    const minWords = Number(contentQuality.min_letter_words || 80);
+    const minParagraphs = Number(contentQuality.min_letter_paragraphs || 3);
+
+    if (words < minWords) issues.push(`letter_too_sparse_words_${words}_lt_${minWords}`);
+    if (paragraphCount(markdown) < minParagraphs) {
+      issues.push(`letter_too_few_paragraphs_${paragraphCount(markdown)}_lt_${minParagraphs}`);
+    }
+  }
+
+  return { words, bullets, issues };
+}
+
+function validateMaterial(request, pdfPath, markdown, rules) {
+  const info = pdfInfo(pdfPath);
+  const layoutIssues = [];
   const size = existsSync(pdfPath) ? readFileSync(pdfPath).length : 0;
-  if (!existsSync(pdfPath)) issues.push('pdf_missing');
-  if (size < 1000) issues.push('pdf_too_small');
+  if (!existsSync(pdfPath)) layoutIssues.push('pdf_missing');
+  if (size < 1000) layoutIssues.push('pdf_too_small');
   if (info.available && request.type === 'resume' && info.pages !== 1) {
-    issues.push(`resume_expected_one_page_got_${info.pages}`);
+    layoutIssues.push(`resume_expected_one_page_got_${info.pages}`);
   }
   if (info.available && request.type === 'letter' && info.pages > 2) {
-    issues.push(`letter_expected_two_pages_or_less_got_${info.pages}`);
+    layoutIssues.push(`letter_expected_two_pages_or_less_got_${info.pages}`);
   }
-  if (!info.available) issues.push('pdfinfo_unavailable_visual_review_required');
+  if (!info.available) layoutIssues.push('pdfinfo_unavailable_visual_review_required');
+
+  const content = validateContent(request, markdown, rules || {});
+  const issues = [...layoutIssues, ...content.issues];
   return {
     validated_at: new Date().toISOString(),
     pdf_path: pdfPath,
     type: request.type,
     pages: info.pages,
     bytes: size,
+    words: content.words,
+    bullets: content.bullets,
+    layout_issues: layoutIssues,
+    content_issues: content.issues,
     issues,
     passed: issues.length === 0,
   };
+}
+
+function statusForValidation(validation) {
+  if (validation.passed) return 'generated_pdf';
+  if (validation.layout_issues.length) return 'generated_needs_layout_review';
+  if (validation.content_issues.length) return 'generated_needs_content_review';
+  return 'generated_needs_review';
 }
 
 function markBlocked(request, reason) {
@@ -375,6 +454,7 @@ if (!requests.length || !pending.length) {
 }
 
 const profile = readYaml(profilePath);
+const rules = readYaml(rulesPath);
 const context = existsSync(contextPath) ? readJson(contextPath) : null;
 let generated = 0;
 let blocked = 0;
@@ -412,9 +492,9 @@ for (const request of pending) {
   const output = writeMaterial(request, markdown);
   try {
     await renderPdf(output.htmlPath, output.pdfPath);
-    const validation = validatePdf(request, output.pdfPath);
+    const validation = validateMaterial(request, output.pdfPath, markdown, rules);
     writeFileSync(output.validationPath, JSON.stringify(validation, null, 2) + '\n', 'utf8');
-    request.status = validation.passed ? 'generated_pdf' : 'generated_needs_layout_review';
+    request.status = statusForValidation(validation);
     request.output_path = output.pdfPath;
     generated += 1;
     console.log(`Generated ${request.type}: ${request.company} - ${request.title}`);
