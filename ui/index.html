@@ -17,15 +17,11 @@
 
         <nav class="nav">
           <button class="nav-item active" type="button" data-view="active_review">
-            <span>Active Review</span>
+            <span>Needs Review</span>
             <strong id="activeReviewCount">0</strong>
           </button>
-          <button class="nav-item" type="button" data-view="apply_today">
-            <span>Apply Today</span>
-            <strong id="applyTodayCount">0</strong>
-          </button>
           <button class="nav-item" type="button" data-view="active_pipeline">
-            <span>Active Pipeline</span>
+            <span>Pipeline</span>
             <strong id="activePipelineCount">0</strong>
           </button>
           <button class="nav-item" type="button" data-view="applied">
@@ -33,31 +29,36 @@
             <strong id="appliedCount">0</strong>
           </button>
           <button class="nav-item" type="button" data-view="generation_queue">
-            <span>Generation Queue</span>
+            <span>Materials</span>
             <strong id="generationCount">0</strong>
           </button>
-          <button class="nav-item" type="button" data-view="handled_review">
-            <span>Handled Review</span>
-            <strong id="handledReviewCount">0</strong>
-          </button>
-          <button class="nav-item" type="button" data-view="rejected">
-            <span>Scanner Rejected</span>
-            <strong id="rejectedCount">0</strong>
-          </button>
-          <button class="nav-item" type="button" data-view="all_pipeline">
-            <span>All Pipeline</span>
-            <strong id="pipelineCount">0</strong>
-          </button>
-          <button class="nav-item" type="button" data-view="all_review">
-            <span>All Review</span>
-            <strong id="needsReviewCount">0</strong>
-          </button>
-          <button class="nav-item" type="button" data-view="scan_summary">
-            <span>Scan Summary</span>
-          </button>
-          <button class="nav-item" type="button" data-view="company_coverage">
-            <span>Company Coverage</span>
-          </button>
+          <details class="nav-disclosure">
+            <summary>Audit</summary>
+            <div class="nav-disclosure-items">
+              <button class="nav-item" type="button" data-view="handled_review">
+                <span>Handled Review</span>
+                <strong id="handledReviewCount">0</strong>
+              </button>
+              <button class="nav-item" type="button" data-view="rejected">
+                <span>Scanner Rejected</span>
+                <strong id="rejectedCount">0</strong>
+              </button>
+              <button class="nav-item" type="button" data-view="all_pipeline">
+                <span>All Pipeline</span>
+                <strong id="pipelineCount">0</strong>
+              </button>
+              <button class="nav-item" type="button" data-view="all_review">
+                <span>All Review</span>
+                <strong id="needsReviewCount">0</strong>
+              </button>
+              <button class="nav-item" type="button" data-view="scan_summary">
+                <span>Scan Summary</span>
+              </button>
+              <button class="nav-item" type="button" data-view="company_coverage">
+                <span>Company Coverage</span>
+              </button>
+            </div>
+          </details>
         </nav>
 
         <div class="sidebar-meta">
@@ -78,7 +79,6 @@
           <div class="actions">
             <button id="runScan" type="button">Run Scan</button>
             <button id="refreshState" type="button">Refresh</button>
-            <button id="rebuildState" type="button">Rebuild State</button>
             <p id="operationStatus" class="operation-status" role="status" aria-live="polite"></p>
           </div>
         </header>

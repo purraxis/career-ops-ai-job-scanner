@@ -107,6 +107,44 @@ p {
   gap: 6px;
 }
 
+.nav-disclosure {
+  margin-top: 8px;
+}
+
+.nav-disclosure summary,
+.debug-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.nav-disclosure summary {
+  padding: 10px 12px;
+  color: #a8b5c7;
+}
+
+.nav-disclosure summary:hover {
+  color: #ffffff;
+}
+
+.nav-disclosure-items {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.controls [hidden] {
+  display: none !important;
+}
+
+.debug-details {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.debug-details .detail-grid {
+  margin-top: 12px;
+}
+
 .nav-item {
   display: flex;
   align-items: center;

@@ -19,7 +19,6 @@ const searchDebounceMs = 150;
 const els = {
   lastScan: document.querySelector('#lastScan'),
   activeReviewCount: document.querySelector('#activeReviewCount'),
-  applyTodayCount: document.querySelector('#applyTodayCount'),
   activePipelineCount: document.querySelector('#activePipelineCount'),
   appliedCount: document.querySelector('#appliedCount'),
   generationCount: document.querySelector('#generationCount'),
@@ -46,7 +45,6 @@ const els = {
   detailPanel: document.querySelector('#detailPanel'),
   runScan: document.querySelector('#runScan'),
   refreshState: document.querySelector('#refreshState'),
-  rebuildState: document.querySelector('#rebuildState'),
   operationStatus: document.querySelector('#operationStatus'),
   scanLogPanel: document.querySelector('#scanLogPanel'),
   scanElapsed: document.querySelector('#scanElapsed'),
@@ -58,20 +56,14 @@ const els = {
 
 const viewConfig = {
   active_review: {
-    title: 'Active Review',
-    kicker: 'Needs Review',
+    title: 'Needs Review',
+    kicker: 'Review Queue',
     source: () => state?.queues?.active_review || [],
     actionContext: 'review',
   },
-  apply_today: {
-    title: 'Apply Today',
-    kicker: 'Daily Pipeline',
-    source: () => state?.queues?.apply_today || [],
-    actionContext: 'pipeline',
-  },
   active_pipeline: {
-    title: 'Active Pipeline',
-    kicker: 'Pipeline',
+    title: 'Pipeline',
+    kicker: 'Application Pipeline',
     source: () => state?.queues?.active_pipeline || [],
     actionContext: 'pipeline',
   },
@@ -126,8 +118,8 @@ async function loadState() {
 }
 
 async function rebuildState() {
-  els.rebuildState.disabled = true;
-  els.rebuildState.textContent = 'Rebuilding...';
+  els.refreshState.disabled = true;
+  els.refreshState.textContent = 'Rebuilding...';
   setOperationStatus('Rebuilding dashboard state...');
   try {
     await requestJson('/api/build-ui-state', { method: 'POST', body: '{}' });
@@ -137,8 +129,8 @@ async function rebuildState() {
     setOperationStatus(error.message, 'error');
     throw error;
   } finally {
-    els.rebuildState.disabled = false;
-    els.rebuildState.textContent = 'Rebuild State';
+    els.refreshState.disabled = false;
+    els.refreshState.textContent = 'Refresh';
   }
 }
 
@@ -180,14 +172,12 @@ function setScanRunning(isRunning) {
     els.runScan.textContent = 'Cancel Scan';
     els.runScan.classList.add('danger');
     els.refreshState.disabled = true;
-    els.rebuildState.disabled = true;
     return;
   }
   els.runScan.textContent = 'Run Scan';
   els.runScan.classList.remove('danger');
   els.runScan.disabled = false;
   els.refreshState.disabled = false;
-  els.rebuildState.disabled = false;
 }
 
 function parseSseChunk(buffer, onEvent) {
@@ -424,19 +414,31 @@ async function moveToPipeline(item, button) {
   }
 }
 
-async function requestGeneration(type, item, button) {
+async function generateMaterial(type, item, button) {
   button.disabled = true;
   const previousText = button.textContent;
-  button.textContent = 'Queued...';
   try {
+    if (!item.jd_cached) {
+      button.textContent = 'Preparing...';
+      await requestJson('/api/cache-job-description', {
+        method: 'POST',
+        body: JSON.stringify({ job: item }),
+      });
+    }
+    button.textContent = 'Matching context...';
+    await requestJson('/api/match-career-context', {
+      method: 'POST',
+      body: JSON.stringify({ job: item }),
+    });
+    button.textContent = 'Queuing...';
     await requestJson('/api/generation-request', {
       method: 'POST',
       body: JSON.stringify({ type, job: item }),
     });
     await loadState();
+    setOperationStatus(`${type === 'resume' ? 'Resume' : 'Letter'} queued for generation.`);
   } catch (error) {
     setOperationStatus(error.message, 'error');
-  } finally {
     button.textContent = previousText;
     button.disabled = false;
   }
@@ -625,7 +627,6 @@ function renderReasonOptions() {
 function renderStats() {
   els.lastScan.textContent = state?.last_scan_at || '-';
   els.activeReviewCount.textContent = state?.stats?.active_review_count ?? state?.queues?.active_review?.length ?? 0;
-  els.applyTodayCount.textContent = state?.stats?.apply_today_count ?? state?.queues?.apply_today?.length ?? 0;
   els.activePipelineCount.textContent = state?.stats?.active_pipeline_count ?? state?.queues?.active_pipeline?.length ?? 0;
   els.appliedCount.textContent = state?.stats?.applied_count ?? state?.queues?.applied?.length ?? 0;
   els.generationCount.textContent = state?.stats?.pending_generation_requests_count ?? 0;
@@ -647,14 +648,17 @@ function setView(view) {
 
 function setVisiblePanel() {
   const isJobView = jobViews.has(currentView);
+  const isAuditFilterView = new Set(['rejected', 'handled_review', 'all_pipeline', 'all_review']).has(currentView);
   els.jobWorkspace.hidden = !isJobView;
   els.summaryView.hidden = currentView !== 'scan_summary';
   els.coverageView.hidden = currentView !== 'company_coverage';
   els.generationView.hidden = currentView !== 'generation_queue';
   els.search.disabled = !isJobView;
   els.providerFilter.disabled = !isJobView;
-  els.reasonFilter.disabled = !isJobView;
-  els.showHandled.disabled = !isJobView;
+  els.reasonFilter.hidden = !isAuditFilterView;
+  els.showHandled.closest('.check-control').hidden = !isAuditFilterView;
+  els.reasonFilter.disabled = !isAuditFilterView;
+  els.showHandled.disabled = !isAuditFilterView;
 }
 
 function renderJobRows() {
@@ -806,8 +810,6 @@ function renderDetail(item) {
   appendDetailRow(details, 'Classification', item.classification);
   appendDetailRow(details, 'Reason', primaryReason(item));
   appendDetailRow(details, 'Final URL', item.final_url || item.url);
-  appendDetailRow(details, 'JD Cache', item.jd_cached ? `Cached | ${item.jd_cache_path}` : `Missing | ${item.jd_cache_path || ''}`);
-  appendDetailRow(details, 'Career Context', item.context_matched ? `Matched | ${item.context_match_path}` : `Missing | ${item.context_match_path || ''}`);
   appendDetailRow(details, 'Latest Action', latestAction ? `${actionLabel(latestAction.action)} | ${latestAction.timestamp}` : '');
   appendDetailRow(details, 'Generation Requests', generationRequestSummary(item));
 
@@ -819,8 +821,6 @@ function renderDetail(item) {
   open.rel = 'noreferrer';
   open.textContent = 'Open Job';
   actions.append(open);
-  actions.append(makeButton(item.jd_cached ? 'Re-cache JD' : 'Cache JD', 'secondary', button => cacheJobDescription(item, button)));
-  actions.append(makeButton(item.context_matched ? 'Re-match Context' : 'Match Context', 'secondary', button => matchCareerContext(item, button), !item.jd_cached));
 
   if (actionContext === 'review' && !item.is_moved_to_pipeline && !item.is_rejected_by_user) {
     actions.append(
@@ -837,26 +837,40 @@ function renderDetail(item) {
   if (actionContext === 'applied' || actionContext === 'handled_review') {
     actions.append(makeButton('Log Follow-Up', 'secondary', button => logJobAction('saved_for_later', item, button, 'Follow-up noted from dashboard')));
   }
-  actions.append(
-    makeButton(
-      hasGenerationRequest(item, 'resume') ? 'Resume Queued' : 'Queue Resume',
-      'token-action',
-      button => requestGeneration('resume', item, button),
-      hasGenerationRequest(item, 'resume'),
-    ),
-    makeButton(
-      hasGenerationRequest(item, 'letter') ? 'Letter Queued' : 'Queue Letter',
-      'token-action',
-      button => requestGeneration('letter', item, button),
-      hasGenerationRequest(item, 'letter'),
-    ),
-  );
+  if (currentView === 'active_pipeline') {
+    actions.append(
+      makeButton(
+        hasGenerationRequest(item, 'resume') ? 'Resume Queued' : 'Generate Resume',
+        'token-action',
+        button => generateMaterial('resume', item, button),
+        hasGenerationRequest(item, 'resume'),
+      ),
+      makeButton(
+        hasGenerationRequest(item, 'letter') ? 'Letter Queued' : 'Generate Letter',
+        'token-action',
+        button => generateMaterial('letter', item, button),
+        hasGenerationRequest(item, 'letter'),
+      ),
+    );
+  }
 
   const tokenNote = document.createElement('p');
   tokenNote.className = 'detail-note';
-  tokenNote.textContent = 'Queue buttons only write local requests. Deterministic PDF generation runs separately and does not spend LLM tokens.';
+  tokenNote.textContent = 'Generate Resume calls OpenAI. Generate Letter calls Anthropic Claude. Both spend real API tokens when clicked.';
 
-  els.detailPanel.append(title, company, details, actions, tokenNote);
+  const debugDetails = document.createElement('details');
+  debugDetails.className = 'debug-details';
+  const debugSummary = document.createElement('summary');
+  debugSummary.textContent = 'Debug details';
+  const debugGrid = document.createElement('div');
+  debugGrid.className = 'detail-grid';
+  appendDetailRow(debugGrid, 'JD Cache', item.jd_cached ? `Cached | ${item.jd_cache_path}` : `Missing | ${item.jd_cache_path || ''}`);
+  appendDetailRow(debugGrid, 'Career Context', item.context_matched ? `Matched | ${item.context_match_path}` : `Missing | ${item.context_match_path || ''}`);
+  debugDetails.append(debugSummary, debugGrid);
+
+  els.detailPanel.append(title, company, details, actions);
+  if (currentView === 'active_pipeline') els.detailPanel.append(tokenNote);
+  els.detailPanel.append(debugDetails);
 }
 
 function generationRequestSummary(item) {
@@ -997,8 +1011,8 @@ function renderCoverage() {
 function renderGenerationQueue() {
   const requests = [...(state?.generation_requests || [])]
     .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
-  els.viewKicker.textContent = 'Explicit Token Queue';
-  els.viewTitle.textContent = 'Generation Queue';
+  els.viewKicker.textContent = 'Generated Materials';
+  els.viewTitle.textContent = 'Materials';
   els.viewMeta.textContent = `${requests.length} material requests`;
   els.generationContent.innerHTML = '';
 
@@ -1124,12 +1138,7 @@ function render() {
 }
 
 els.runScan.addEventListener('click', () => runScan().catch(() => {}));
-els.refreshState.addEventListener('click', () => {
-  loadState()
-    .then(() => setOperationStatus('Dashboard refreshed.'))
-    .catch(error => setOperationStatus(error.message, 'error'));
-});
-els.rebuildState.addEventListener('click', () => rebuildState().catch(() => {}));
+els.refreshState.addEventListener('click', () => rebuildState().catch(() => {}));
 els.search.addEventListener('input', () => {
   clearTimeout(searchDebounceTimer);
   searchDebounceTimer = setTimeout(() => {
