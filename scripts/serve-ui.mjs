@@ -19,6 +19,15 @@ const FILE_ROOTS = [
   join(ROOT, 'data/job-descriptions'),
   join(ROOT, 'data/context-matches'),
 ];
+const FULL_REBUILD_SCRIPTS = [
+  'scripts/build-scan-summary.mjs',
+  'scripts/build-company-coverage.mjs',
+  'scripts/build-career-context.mjs',
+  'scripts/build-ui-state.mjs',
+];
+const UI_STATE_REBUILD_SCRIPTS = ['scripts/build-ui-state.mjs'];
+const CONTEXT_REBUILD_SCRIPTS = ['scripts/build-career-context.mjs', 'scripts/build-ui-state.mjs'];
+let runningScan = null;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -83,13 +92,23 @@ function runNodeScript(script, args = []) {
 }
 
 async function rebuildAppState() {
-  for (const script of [
-    'scripts/build-scan-summary.mjs',
-    'scripts/build-company-coverage.mjs',
-    'scripts/build-career-context.mjs',
-    'scripts/build-ui-state.mjs',
-  ]) {
+  await rebuild(FULL_REBUILD_SCRIPTS);
+}
+
+async function rebuild(scripts) {
+  for (const script of scripts) {
     await runNodeScript(script);
+  }
+}
+
+function writeSse(res, event, data = {}) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function writeSseLines(res, event, chunk) {
+  for (const line of String(chunk).split(/\r?\n/)) {
+    if (line.trim()) writeSse(res, event, { line });
   }
 }
 
@@ -250,9 +269,73 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && req.url === '/api/run-scan') {
-      const result = await runNodeScript('scan.mjs');
-      await rebuildAppState();
-      send(res, 200, { ok: true, stdout: result.stdout, stderr: result.stderr });
+      if (runningScan) {
+        send(res, 409, { ok: false, error: 'scan_already_running' });
+        return;
+      }
+
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-store',
+        connection: 'keep-alive',
+      });
+
+      const child = spawn(process.execPath, ['scan.mjs'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+      runningScan = { child, canceled: false };
+      let finished = false;
+
+      writeSse(res, 'start', { message: 'Scan started.' });
+      child.stdout.on('data', chunk => writeSseLines(res, 'stdout', chunk));
+      child.stderr.on('data', chunk => writeSseLines(res, 'stderr', chunk));
+      child.on('error', error => {
+        finished = true;
+        runningScan = null;
+        writeSse(res, 'error', { message: error.message });
+        res.end();
+      });
+      child.on('close', async code => {
+        finished = true;
+        const wasCanceled = runningScan?.canceled;
+        if (wasCanceled) {
+          runningScan = null;
+          writeSse(res, 'canceled', { code, message: 'Scan canceled.' });
+          res.end();
+          return;
+        }
+        if (code !== 0) {
+          runningScan = null;
+          writeSse(res, 'error', { code, message: `Scan exited with ${code}` });
+          res.end();
+          return;
+        }
+        try {
+          writeSse(res, 'rebuild', { message: 'Rebuilding dashboard state...' });
+          await rebuildAppState();
+          writeSse(res, 'done', { code, message: 'Scan complete. Dashboard state rebuilt.' });
+        } catch (error) {
+          writeSse(res, 'error', { code, message: error.message });
+        } finally {
+          runningScan = null;
+        }
+        res.end();
+      });
+      req.on('close', () => {
+        if (!finished && runningScan?.child === child) {
+          runningScan.canceled = true;
+          child.kill('SIGTERM');
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/cancel-scan') {
+      if (!runningScan) {
+        send(res, 200, { ok: true, canceled: false });
+        return;
+      }
+      runningScan.canceled = true;
+      runningScan.child.kill('SIGTERM');
+      send(res, 200, { ok: true, canceled: true });
       return;
     }
 
@@ -260,7 +343,7 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req);
       const result = moveToPipeline(body.job);
       appendJobAction(result.moved ? 'moved_to_pipeline' : 'move_to_pipeline_skipped', body.job, result.reason || '');
-      await rebuildAppState();
+      await rebuild(UI_STATE_REBUILD_SCRIPTS);
       send(res, 200, { ok: true, ...result });
       return;
     }
@@ -272,7 +355,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       appendJobAction(body.action, body.job || {}, body.note || '');
-      await rebuildAppState();
+      await rebuild(UI_STATE_REBUILD_SCRIPTS);
       send(res, 200, { ok: true });
       return;
     }
@@ -280,14 +363,14 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST' && req.url === '/api/generation-request') {
       const body = await readBody(req);
       appendGenerationRequest(body.type, body.job || {});
-      await rebuildAppState();
+      await rebuild(UI_STATE_REBUILD_SCRIPTS);
       send(res, 200, { ok: true });
       return;
     }
 
     if (req.method === 'POST' && req.url === '/api/generate-queued-materials') {
       const result = await runNodeScript('scripts/generate-queued-materials.mjs');
-      await rebuildAppState();
+      await rebuild(CONTEXT_REBUILD_SCRIPTS);
       send(res, 200, { ok: true, stdout: result.stdout, stderr: result.stderr });
       return;
     }
@@ -306,7 +389,7 @@ const server = createServer(async (req, res) => {
         '--jd', job.jd_cache_path || jobDescriptionPath(job),
         '--context', job.context_match_path || contextMatchPath(job),
       ]);
-      await rebuildAppState();
+      await rebuild(CONTEXT_REBUILD_SCRIPTS);
       let parsed = null;
       try {
         parsed = JSON.parse(result.stdout);
@@ -331,7 +414,7 @@ const server = createServer(async (req, res) => {
         '--company', job.company || '',
         '--title', job.title || '',
       ]);
-      await rebuildAppState();
+      await rebuild(CONTEXT_REBUILD_SCRIPTS);
       let parsed = null;
       try {
         parsed = JSON.parse(result.stdout);
@@ -353,7 +436,7 @@ const server = createServer(async (req, res) => {
         '--company', job.company || '',
         '--title', job.title || '',
       ]);
-      await rebuildAppState();
+      await rebuild(CONTEXT_REBUILD_SCRIPTS);
       let parsed = null;
       try {
         parsed = JSON.parse(result.stdout);

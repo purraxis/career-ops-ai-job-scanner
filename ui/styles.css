@@ -194,6 +194,43 @@ p {
   color: var(--danger);
 }
 
+.scan-log-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.scan-log-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-soft);
+}
+
+.scan-log-head strong {
+  display: block;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-log-lines {
+  max-height: 220px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  overflow: auto;
+  color: #d1d5db;
+  background: #111827;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 .controls {
   display: grid;
   grid-template-columns: minmax(320px, 1fr) 190px 260px 150px;
@@ -269,12 +306,17 @@ p {
 
 .job-row {
   width: 100%;
-  min-height: 70px;
+  height: 70px;
   border: 0;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
   padding: 10px 12px;
   text-align: left;
+}
+
+.job-row-spacer {
+  width: 100%;
+  flex: 0 0 auto;
 }
 
 .job-row:hover,
@@ -307,13 +349,13 @@ p {
 .row-date {
   color: var(--muted);
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .row-reason {
   margin-top: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .detail-panel {

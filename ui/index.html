@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Career Ops Job Scanner</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
@@ -81,6 +82,17 @@
             <p id="operationStatus" class="operation-status" role="status" aria-live="polite"></p>
           </div>
         </header>
+
+        <section id="scanLogPanel" class="scan-log-panel" hidden>
+          <div class="scan-log-head">
+            <div>
+              <p class="eyebrow">Live Scan</p>
+              <strong id="scanElapsed">00:00</strong>
+            </div>
+            <button id="scanLogDismiss" type="button" class="secondary">Dismiss</button>
+          </div>
+          <pre id="scanLogLines" class="scan-log-lines" aria-live="polite"></pre>
+        </section>
 
         <section class="controls" aria-label="Job filters">
           <input id="search" type="search" placeholder="Search company, role, location, reason">

@@ -2,6 +2,19 @@ let state = null;
 let currentView = 'active_review';
 let selectedId = '';
 let latestActionByJobId = new Map();
+let visibleJobItems = [];
+let resetScrollOnNextRender = true;
+let jobRowsRaf = 0;
+let searchDebounceTimer = 0;
+let scanController = null;
+let scanStartedAt = 0;
+let scanElapsedTimer = 0;
+const optimisticHiddenByView = new Map();
+
+const rowHeight = 70;
+const overscanRows = 10;
+const maxRenderedRows = 60;
+const searchDebounceMs = 150;
 
 const els = {
   lastScan: document.querySelector('#lastScan'),
@@ -35,6 +48,10 @@ const els = {
   refreshState: document.querySelector('#refreshState'),
   rebuildState: document.querySelector('#rebuildState'),
   operationStatus: document.querySelector('#operationStatus'),
+  scanLogPanel: document.querySelector('#scanLogPanel'),
+  scanElapsed: document.querySelector('#scanElapsed'),
+  scanLogLines: document.querySelector('#scanLogLines'),
+  scanLogDismiss: document.querySelector('#scanLogDismiss'),
   navItems: [...document.querySelectorAll('.nav-item')],
   template: document.querySelector('#jobRowTemplate'),
 };
@@ -125,20 +142,153 @@ async function rebuildState() {
   }
 }
 
-async function runScan() {
-  els.runScan.disabled = true;
-  const previousText = els.runScan.textContent;
-  els.runScan.textContent = 'Scanning...';
-  setOperationStatus('Running scanner. This may take a few minutes...');
-  try {
-    await requestJson('/api/run-scan', { method: 'POST', body: '{}' });
+function formatElapsed(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
+
+function setScanElapsed() {
+  if (!els.scanElapsed || !scanStartedAt) return;
+  els.scanElapsed.textContent = formatElapsed(Date.now() - scanStartedAt);
+}
+
+function appendScanLog(line, tone = '') {
+  if (!els.scanLogLines || !line) return;
+  els.scanLogLines.textContent += `${tone ? `[${tone}] ` : ''}${line}\n`;
+  els.scanLogLines.scrollTop = els.scanLogLines.scrollHeight;
+}
+
+function resetScanLog() {
+  if (els.scanLogPanel) els.scanLogPanel.hidden = false;
+  if (els.scanLogLines) els.scanLogLines.textContent = '';
+  scanStartedAt = Date.now();
+  setScanElapsed();
+  clearInterval(scanElapsedTimer);
+  scanElapsedTimer = setInterval(setScanElapsed, 1000);
+}
+
+function stopScanTimer() {
+  clearInterval(scanElapsedTimer);
+  scanElapsedTimer = 0;
+  setScanElapsed();
+}
+
+function setScanRunning(isRunning) {
+  if (isRunning) {
+    els.runScan.textContent = 'Cancel Scan';
+    els.runScan.classList.add('danger');
+    els.refreshState.disabled = true;
+    els.rebuildState.disabled = true;
+    return;
+  }
+  els.runScan.textContent = 'Run Scan';
+  els.runScan.classList.remove('danger');
+  els.runScan.disabled = false;
+  els.refreshState.disabled = false;
+  els.rebuildState.disabled = false;
+}
+
+function parseSseChunk(buffer, onEvent) {
+  let remaining = buffer;
+  let boundary = remaining.indexOf('\n\n');
+  while (boundary !== -1) {
+    const rawEvent = remaining.slice(0, boundary);
+    remaining = remaining.slice(boundary + 2);
+    let event = 'message';
+    const dataLines = [];
+    for (const line of rawEvent.split(/\r?\n/)) {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+    }
+    const rawData = dataLines.join('\n');
+    let data = {};
+    try {
+      data = rawData ? JSON.parse(rawData) : {};
+    } catch {
+      data = { line: rawData };
+    }
+    onEvent(event, data);
+    boundary = remaining.indexOf('\n\n');
+  }
+  return remaining;
+}
+
+async function handleScanEvent(event, data) {
+  if (event === 'stdout' || event === 'stderr') {
+    appendScanLog(data.line, event === 'stderr' ? 'stderr' : '');
+    return;
+  }
+  appendScanLog(data.message || data.line || event, event);
+  if (event === 'done') {
     await loadState();
-    setOperationStatus('Scan complete. Dashboard state rebuilt.');
+    setOperationStatus(data.message || 'Scan complete.');
+  }
+  if (event === 'error') {
+    setOperationStatus(data.message || 'Scan failed.', 'error');
+  }
+  if (event === 'canceled') {
+    setOperationStatus(data.message || 'Scan canceled.');
+  }
+}
+
+async function runScan() {
+  if (scanController) {
+    await cancelScan();
+    return;
+  }
+
+  scanController = new AbortController();
+  resetScanLog();
+  setScanRunning(true);
+  setOperationStatus('Running scanner...');
+  try {
+    const res = await fetch('/api/run-scan', {
+      method: 'POST',
+      body: '{}',
+      signal: scanController.signal,
+    });
+    if (!res.ok) {
+      let message = `Scan failed: ${res.status}`;
+      try {
+        const data = await res.json();
+        message = data.error || data.message || message;
+      } catch {}
+      throw new Error(message);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      buffer = parseSseChunk(buffer, (event, data) => {
+        handleScanEvent(event, data).catch(error => setOperationStatus(error.message, 'error'));
+      });
+    }
+  } catch (error) {
+    if (error.name !== 'AbortError') {
+      appendScanLog(error.message, 'error');
+      setOperationStatus(error.message, 'error');
+    }
+  } finally {
+    scanController = null;
+    stopScanTimer();
+    setScanRunning(false);
+  }
+}
+
+async function cancelScan() {
+  els.runScan.disabled = true;
+  setOperationStatus('Canceling scan...');
+  try {
+    await requestJson('/api/cancel-scan', { method: 'POST', body: '{}' });
+    appendScanLog('Cancel requested.', 'cancel');
   } catch (error) {
     setOperationStatus(error.message, 'error');
-    throw error;
   } finally {
-    els.runScan.textContent = previousText;
     els.runScan.disabled = false;
   }
 }
@@ -147,9 +297,84 @@ function setOperationStatus(message, tone = '') {
   if (!els.operationStatus) return;
   els.operationStatus.textContent = message || '';
   els.operationStatus.classList.toggle('error', tone === 'error');
+  if (message && tone === 'error') {
+    clearTimeout(setOperationStatus.errorTimer);
+    setOperationStatus.errorTimer = setTimeout(() => {
+      if (els.operationStatus.textContent === message) setOperationStatus('');
+    }, 8000);
+  }
+}
+
+function hiddenIdsForView(view) {
+  if (!optimisticHiddenByView.has(view)) optimisticHiddenByView.set(view, new Set());
+  return optimisticHiddenByView.get(view);
+}
+
+function optimisticSelectionAfterRemoving(id) {
+  const index = visibleJobItems.findIndex(item => item.id === id);
+  return visibleJobItems[index + 1]?.id || visibleJobItems[index - 1]?.id || '';
+}
+
+function hideJobOptimistically(item, nextSelectedId) {
+  hiddenIdsForView(currentView).add(item.id);
+  selectedId = nextSelectedId;
+  renderJobRows();
+}
+
+function restoreOptimisticJob(item, view, previousSelection) {
+  hiddenIdsForView(view).delete(item.id);
+  if (currentView === view) {
+    selectedId = previousSelection;
+    renderJobRows();
+  }
+}
+
+async function refreshStateAfterAction(item, view) {
+  try {
+    await loadState();
+    hiddenIdsForView(view).delete(item.id);
+  } catch (error) {
+    setOperationStatus(error.message, 'error');
+  }
+}
+
+function runOptimisticAction(item, button, pendingText, requestFn, successMessage) {
+  button.disabled = true;
+  const previousText = button.textContent;
+  const view = currentView;
+  const previousSelection = selectedId;
+  const nextSelection = optimisticSelectionAfterRemoving(item.id);
+  button.textContent = pendingText;
+  hideJobOptimistically(item, nextSelection);
+  setOperationStatus(successMessage || 'Action saved.');
+
+  requestFn()
+    .then(() => refreshStateAfterAction(item, view))
+    .catch(error => {
+      restoreOptimisticJob(item, view, previousSelection);
+      setOperationStatus(error.message, 'error');
+    })
+    .finally(() => {
+      button.textContent = previousText;
+      button.disabled = false;
+    });
 }
 
 async function logJobAction(action, item, button, note = '') {
+  if (['applied', 'rejected_by_user'].includes(action) && item?.id) {
+    runOptimisticAction(
+      item,
+      button,
+      'Saving...',
+      () => requestJson('/api/job-action', {
+        method: 'POST',
+        body: JSON.stringify({ action, job: item, note }),
+      }),
+      action === 'applied' ? 'Marked applied.' : 'Rejected.',
+    );
+    return;
+  }
+
   button.disabled = true;
   const previousText = button.textContent;
   button.textContent = 'Saving...';
@@ -159,6 +384,8 @@ async function logJobAction(action, item, button, note = '') {
       body: JSON.stringify({ action, job: item, note }),
     });
     await loadState();
+  } catch (error) {
+    setOperationStatus(error.message, 'error');
   } finally {
     button.textContent = previousText;
     button.disabled = false;
@@ -166,6 +393,20 @@ async function logJobAction(action, item, button, note = '') {
 }
 
 async function moveToPipeline(item, button) {
+  if (item?.id) {
+    runOptimisticAction(
+      item,
+      button,
+      'Moving...',
+      () => requestJson('/api/move-to-pipeline', {
+        method: 'POST',
+        body: JSON.stringify({ job: item }),
+      }),
+      'Moved to pipeline.',
+    );
+    return;
+  }
+
   button.disabled = true;
   const previousText = button.textContent;
   button.textContent = 'Moving...';
@@ -175,6 +416,8 @@ async function moveToPipeline(item, button) {
       body: JSON.stringify({ job: item }),
     });
     await loadState();
+  } catch (error) {
+    setOperationStatus(error.message, 'error');
   } finally {
     button.textContent = previousText;
     button.disabled = false;
@@ -191,6 +434,8 @@ async function requestGeneration(type, item, button) {
       body: JSON.stringify({ type, job: item }),
     });
     await loadState();
+  } catch (error) {
+    setOperationStatus(error.message, 'error');
   } finally {
     button.textContent = previousText;
     button.disabled = false;
@@ -207,6 +452,8 @@ async function runQueuedMaterials(button) {
       body: '{}',
     });
     await loadState();
+  } catch (error) {
+    setOperationStatus(error.message, 'error');
   } finally {
     button.textContent = previousText;
     button.disabled = false;
@@ -223,6 +470,8 @@ async function prepareFinalPackage(item, button) {
       body: JSON.stringify({ type: item.type, job: item }),
     });
     await loadState();
+  } catch (error) {
+    setOperationStatus(error.message, 'error');
   } finally {
     button.textContent = previousText;
     button.disabled = false;
@@ -239,6 +488,8 @@ async function cacheJobDescription(item, button) {
       body: JSON.stringify({ job: item }),
     });
     await loadState();
+  } catch (error) {
+    setOperationStatus(error.message, 'error');
   } finally {
     button.textContent = previousText;
     button.disabled = false;
@@ -255,6 +506,8 @@ async function matchCareerContext(item, button) {
       body: JSON.stringify({ job: item }),
     });
     await loadState();
+  } catch (error) {
+    setOperationStatus(error.message, 'error');
   } finally {
     button.textContent = previousText;
     button.disabled = false;
@@ -332,7 +585,9 @@ function filteredItems() {
   const query = els.search.value.trim().toLowerCase();
   const provider = els.providerFilter.value;
   const reason = els.reasonFilter.value;
+  const hidden = hiddenIdsForView(currentView);
   return itemsForView()
+    .filter(item => !hidden.has(item.id))
     .filter(item => els.showHandled.checked || currentView !== 'all_review' || !isHandled(item))
     .filter(item => els.showHandled.checked || currentView !== 'all_pipeline' || (!item.is_applied && !item.is_rejected_by_user))
     .filter(item => !query || searchableText(item).includes(query))
@@ -385,6 +640,7 @@ function renderStats() {
 function setView(view) {
   currentView = view;
   selectedId = '';
+  resetScrollOnNextRender = true;
   els.navItems.forEach(item => item.classList.toggle('active', item.dataset.view === view));
   render();
 }
@@ -406,6 +662,10 @@ function renderJobRows() {
   const config = viewConfig[currentView];
   const selectedStillVisible = items.some(item => item.id === selectedId);
   if (!selectedStillVisible) selectedId = items[0]?.id || '';
+  visibleJobItems = items;
+
+  const targetScrollTop = resetScrollOnNextRender ? 0 : els.jobRows.scrollTop;
+  resetScrollOnNextRender = false;
 
   els.viewKicker.textContent = config?.kicker || 'Review Queue';
   els.viewTitle.textContent = config?.title || 'Jobs';
@@ -421,28 +681,77 @@ function renderJobRows() {
     return;
   }
 
-  for (const item of items) {
-    const node = els.template.content.cloneNode(true);
-    const row = node.querySelector('.job-row');
-    const latestAction = item.latest_action || latestActionByJobId.get(item.id);
-    row.dataset.id = item.id;
-    row.classList.toggle('selected', item.id === selectedId);
-    row.classList.toggle('handled', Boolean(latestAction));
-    node.querySelector('.row-title').textContent = item.title || item.label || item.url || 'Untitled job';
-    node.querySelector('.row-company').textContent = [item.company, item.location].filter(Boolean).join(' | ') || 'Unknown company';
-    node.querySelector('.row-reason').textContent = latestAction
-      ? actionLabel(latestAction.action)
-      : primaryReason(item);
-    node.querySelector('.row-provider').textContent = providerValue(item);
-    node.querySelector('.row-date').textContent = itemDate(item) || '-';
-    row.addEventListener('click', () => {
-      selectedId = item.id;
-      renderJobRows();
-    });
-    els.jobRows.append(node);
-  }
-
+  renderJobWindow(targetScrollTop);
+  els.jobRows.scrollTop = targetScrollTop;
   renderDetail(items.find(item => item.id === selectedId) || items[0]);
+}
+
+function makeSpacer(height) {
+  const spacer = document.createElement('div');
+  spacer.className = 'job-row-spacer';
+  spacer.style.height = `${Math.max(0, height)}px`;
+  return spacer;
+}
+
+function makeJobRow(item) {
+  const node = els.template.content.cloneNode(true);
+  const row = node.querySelector('.job-row');
+  const latestAction = item.latest_action || latestActionByJobId.get(item.id);
+  row.dataset.id = item.id;
+  row.classList.toggle('selected', item.id === selectedId);
+  row.classList.toggle('handled', Boolean(latestAction));
+  node.querySelector('.row-title').textContent = item.title || item.label || item.url || 'Untitled job';
+  node.querySelector('.row-company').textContent = [item.company, item.location].filter(Boolean).join(' | ') || 'Unknown company';
+  node.querySelector('.row-reason').textContent = latestAction
+    ? actionLabel(latestAction.action)
+    : primaryReason(item);
+  node.querySelector('.row-provider').textContent = providerValue(item);
+  node.querySelector('.row-date').textContent = itemDate(item) || '-';
+  row.addEventListener('click', () => selectJobRow(item.id));
+  return node;
+}
+
+function renderJobWindow(scrollTopOverride) {
+  const items = visibleJobItems;
+  if (!items.length || !jobViews.has(currentView)) return;
+
+  const viewportHeight = els.jobRows.clientHeight || rowHeight * 12;
+  const scrollTop = scrollTopOverride ?? els.jobRows.scrollTop;
+  const firstVisible = Math.floor(scrollTop / rowHeight);
+  const visibleCount = Math.ceil(viewportHeight / rowHeight);
+  const start = Math.max(0, firstVisible - overscanRows);
+  const end = Math.min(items.length, firstVisible + visibleCount + overscanRows + 1, start + maxRenderedRows);
+  const fragment = document.createDocumentFragment();
+
+  fragment.append(makeSpacer(start * rowHeight));
+  for (let i = start; i < end; i += 1) {
+    fragment.append(makeJobRow(items[i]));
+  }
+  fragment.append(makeSpacer((items.length - end) * rowHeight));
+
+  els.jobRows.replaceChildren(fragment);
+}
+
+function scheduleJobWindowRender() {
+  if (jobRowsRaf) return;
+  jobRowsRaf = requestAnimationFrame(() => {
+    jobRowsRaf = 0;
+    renderJobWindow();
+  });
+}
+
+function selectJobRow(id) {
+  if (!id || selectedId === id) {
+    renderDetail(visibleJobItems.find(item => item.id === selectedId) || null);
+    return;
+  }
+  const previousId = selectedId;
+  selectedId = id;
+  const previousRow = els.jobRows.querySelector(`.job-row[data-id="${CSS.escape(previousId)}"]`);
+  const currentRow = els.jobRows.querySelector(`.job-row[data-id="${CSS.escape(selectedId)}"]`);
+  if (previousRow) previousRow.classList.remove('selected');
+  if (currentRow) currentRow.classList.add('selected');
+  renderDetail(visibleJobItems.find(item => item.id === selectedId) || null);
 }
 
 function appendDetailRow(parent, label, value) {
@@ -821,10 +1130,30 @@ els.refreshState.addEventListener('click', () => {
     .catch(error => setOperationStatus(error.message, 'error'));
 });
 els.rebuildState.addEventListener('click', () => rebuildState().catch(() => {}));
-els.search.addEventListener('input', renderJobRows);
-els.providerFilter.addEventListener('change', renderJobRows);
-els.reasonFilter.addEventListener('change', renderJobRows);
-els.showHandled.addEventListener('change', renderJobRows);
+els.search.addEventListener('input', () => {
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    resetScrollOnNextRender = true;
+    renderJobRows();
+  }, searchDebounceMs);
+});
+els.providerFilter.addEventListener('change', () => {
+  resetScrollOnNextRender = true;
+  renderJobRows();
+});
+els.reasonFilter.addEventListener('change', () => {
+  resetScrollOnNextRender = true;
+  renderJobRows();
+});
+els.showHandled.addEventListener('change', () => {
+  resetScrollOnNextRender = true;
+  renderJobRows();
+});
+els.jobRows.addEventListener('scroll', scheduleJobWindowRender, { passive: true });
+window.addEventListener('resize', scheduleJobWindowRender);
+els.scanLogDismiss.addEventListener('click', () => {
+  if (!scanController && els.scanLogPanel) els.scanLogPanel.hidden = true;
+});
 for (const item of els.navItems) {
   item.addEventListener('click', () => setView(item.dataset.view));
 }
