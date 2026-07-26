@@ -224,6 +224,8 @@ async function main() {
     assert.equal(html.status, 200);
     assert.ok(html.body.startsWith('<!doctype html>'));
     assert.ok(html.body.includes('Career Ops Job Scanner'));
+    assert.ok(html.body.includes('id="runScan"'));
+    assert.ok(html.body.includes('Run Scan'));
 
     const appJs = await request(port, 'GET', '/app.js');
     assert.equal(appJs.status, 200);

@@ -176,6 +176,24 @@ p {
   flex-wrap: wrap;
 }
 
+.actions {
+  justify-content: flex-end;
+  max-width: 540px;
+}
+
+.operation-status {
+  flex-basis: 100%;
+  min-height: 18px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.operation-status.error {
+  color: var(--danger);
+}
+
 .controls {
   display: grid;
   grid-template-columns: minmax(320px, 1fr) 190px 260px 150px;

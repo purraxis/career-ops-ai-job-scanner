@@ -31,8 +31,10 @@ const els = {
   generationContent: document.querySelector('#generationContent'),
   jobRows: document.querySelector('#jobRows'),
   detailPanel: document.querySelector('#detailPanel'),
+  runScan: document.querySelector('#runScan'),
   refreshState: document.querySelector('#refreshState'),
   rebuildState: document.querySelector('#rebuildState'),
+  operationStatus: document.querySelector('#operationStatus'),
   navItems: [...document.querySelectorAll('.nav-item')],
   template: document.querySelector('#jobRowTemplate'),
 };
@@ -109,13 +111,42 @@ async function loadState() {
 async function rebuildState() {
   els.rebuildState.disabled = true;
   els.rebuildState.textContent = 'Rebuilding...';
+  setOperationStatus('Rebuilding dashboard state...');
   try {
     await requestJson('/api/build-ui-state', { method: 'POST', body: '{}' });
     await loadState();
+    setOperationStatus('Dashboard state rebuilt.');
+  } catch (error) {
+    setOperationStatus(error.message, 'error');
+    throw error;
   } finally {
     els.rebuildState.disabled = false;
     els.rebuildState.textContent = 'Rebuild State';
   }
+}
+
+async function runScan() {
+  els.runScan.disabled = true;
+  const previousText = els.runScan.textContent;
+  els.runScan.textContent = 'Scanning...';
+  setOperationStatus('Running scanner. This may take a few minutes...');
+  try {
+    await requestJson('/api/run-scan', { method: 'POST', body: '{}' });
+    await loadState();
+    setOperationStatus('Scan complete. Dashboard state rebuilt.');
+  } catch (error) {
+    setOperationStatus(error.message, 'error');
+    throw error;
+  } finally {
+    els.runScan.textContent = previousText;
+    els.runScan.disabled = false;
+  }
+}
+
+function setOperationStatus(message, tone = '') {
+  if (!els.operationStatus) return;
+  els.operationStatus.textContent = message || '';
+  els.operationStatus.classList.toggle('error', tone === 'error');
 }
 
 async function logJobAction(action, item, button, note = '') {
@@ -723,8 +754,13 @@ function render() {
   }
 }
 
-els.refreshState.addEventListener('click', loadState);
-els.rebuildState.addEventListener('click', rebuildState);
+els.runScan.addEventListener('click', () => runScan().catch(() => {}));
+els.refreshState.addEventListener('click', () => {
+  loadState()
+    .then(() => setOperationStatus('Dashboard refreshed.'))
+    .catch(error => setOperationStatus(error.message, 'error'));
+});
+els.rebuildState.addEventListener('click', () => rebuildState().catch(() => {}));
 els.search.addEventListener('input', renderJobRows);
 els.providerFilter.addEventListener('change', renderJobRows);
 els.reasonFilter.addEventListener('change', renderJobRows);

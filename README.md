@@ -142,6 +142,8 @@ The dashboard itself is token-free. Resume generation, cover letter generation, 
 
 The dashboard is desktop-first. Its main workflow is a sidebar-driven review cockpit with compact job rows, a detail panel, action logging, scan summaries, and company coverage views.
 
+Clicking `Run Scan` in the dashboard runs the existing scanner command, rebuilds the local UI state, and refreshes the dashboard results. This uses the same local environment and private ignored files that `npm run scan` uses.
+
 The action log is append-only. `scripts/build-ui-state.mjs` reads `data/job-actions.tsv` and derives:
 
 - active review jobs that still need a human decision,

@@ -221,6 +221,13 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === 'POST' && req.url === '/api/run-scan') {
+      const result = await runNodeScript('scan.mjs');
+      await rebuildAppState();
+      send(res, 200, { ok: true, stdout: result.stdout, stderr: result.stderr });
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/api/move-to-pipeline') {
       const body = await readBody(req);
       const result = moveToPipeline(body.job);
